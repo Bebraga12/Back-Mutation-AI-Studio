@@ -165,6 +165,20 @@ EOF
   fi
 }
 
+prompt_initial_scan() {
+  if [ ! -t 0 ]; then
+    return 0
+  fi
+
+  log "Primeiro passo: rode o scan do projeto atual antes de continuar."
+  log "Comando:"
+  log "  mutation-ai scan ."
+  log "Se o PATH ainda nao estiver atualizado, use:"
+  log "  $LAUNCHER_TARGET scan ."
+  printf 'Depois de executar o scan, pressione Enter para continuar... '
+  read -r _
+}
+
 write_config() {
   local model="$1"
   mkdir -p "$CONFIG_DIR"
@@ -177,20 +191,23 @@ EOF
 main() {
   ensure_java
   ensure_curl
+
+  local jar model
+  build_project
+  jar="$(locate_jar)"
+
+  install_launcher "$jar"
+  prompt_initial_scan
+
   install_ollama_if_needed
   start_ollama_server_if_needed
 
-  local model jar
   model="$(choose_model)"
 
   log "Pulling model: $model"
   ollama pull "$model"
 
-  build_project
-  jar="$(locate_jar)"
-
   write_config "$model"
-  install_launcher "$jar"
 
   log "Installation complete."
   log "Launcher: $LAUNCHER_TARGET"
