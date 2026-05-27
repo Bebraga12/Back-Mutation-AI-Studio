@@ -18,7 +18,7 @@ import java.util.List;
 @Service
 public class ExecuteGeneratedTestBatchService implements ExecuteGeneratedTestBatchUseCase {
 
-    private static final int MAX_ATTEMPTS = 3;
+    private static final int MAX_ATTEMPTS = 4;
 
     private final TestWorkspacePort testWorkspacePort;
     private final TestExecutorPort testExecutorPort;

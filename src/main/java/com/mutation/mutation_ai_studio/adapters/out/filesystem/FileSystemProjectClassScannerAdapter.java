@@ -34,6 +34,19 @@ public class FileSystemProjectClassScannerAdapter implements ProjectClassScanner
             "(?m)^\\s*(?:public\\s+)?enum\\s+\\w"
     );
 
+    /**
+     * Detecta declarações de método (não-campo). Exemplos:
+     *   public String getFoo()
+     *   private boolean isValid(String s)
+     *   @Override public List<Autor> findAll()
+     * NÃO casa com declarações de campo (sem parênteses) nem com "public class Foo {".
+     */
+    private static final Pattern HAS_DECLARED_METHOD = Pattern.compile(
+            "(?m)^[ \\t]*(?:@\\w+(?:\\([^)\\n]*\\))?[ \\t]*)?(?:public|private|protected)[ \\t]+" +
+            "(?:(?:static|final|synchronized|abstract|native)[ \\t]+)*" +
+            "(?!class[ \\t]|interface[ \\t]|enum[ \\t])[\\w$<>\\[\\]]+[^(;\\n]*\\("
+    );
+
     @Override
     public List<JavaClassCandidate> findClasses(Path projectRoot) {
         Path scanRoot = projectRoot.resolve(MAIN_JAVA_PATH).normalize();
@@ -113,7 +126,49 @@ public class FileSystemProjectClassScannerAdapter implements ProjectClassScanner
             return false;
         }
 
+        // DTO/VO puro — tem anotações Lombok de dados mas nenhum estereótipo Spring
+        // e nenhum método declarado explicitamente na fonte. O Lombok gera getters/setters
+        // em tempo de compilação; não há lógica de negócio para testar com Mockito.
+        if (isPureLombokDataClass(content)) {
+            return false;
+        }
+
+        // Configuração Spring Security — @EnableWebSecurity marca classes que constroem
+        // a cadeia de filtros via HttpSecurity DSL; esses builders usam generics complexos
+        // e acesso a contexto Spring que não podem ser mockados com Mockito padrão.
+        if (content.contains("@EnableWebSecurity")) {
+            return false;
+        }
+
         return true;
+    }
+
+    /**
+     * Retorna true para classes que são apenas contêineres de dados Lombok sem lógica
+     * de negócio: têm anotações como @Getter/@Setter/@Data mas nenhum estereótipo Spring
+     * e nenhum método declarado no código-fonte.
+     */
+    private boolean isPureLombokDataClass(String content) {
+        boolean hasLombokDataAnnotation = content.contains("@Getter")
+                || content.contains("@Setter")
+                || content.contains("@Data");
+        if (!hasLombokDataAnnotation) {
+            return false;
+        }
+
+        // Se tiver estereótipo Spring, é um componente gerenciado — inclui para teste
+        boolean hasSpringStereotype = content.contains("@Service")
+                || content.contains("@Component")
+                || content.contains("@Controller")
+                || content.contains("@RestController")
+                || content.contains("@Configuration")
+                || content.contains("@Repository");
+        if (hasSpringStereotype) {
+            return false;
+        }
+
+        // Se tiver métodos declarados explicitamente, tem lógica que vale testar
+        return !HAS_DECLARED_METHOD.matcher(content).find();
     }
 
     private JavaClassCandidate toCandidate(Path scanRoot, Path absoluteClassPath) {

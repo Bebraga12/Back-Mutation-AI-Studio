@@ -186,8 +186,78 @@ public class CreateTestPromptService implements CreateTestPromptUseCase {
             sb.append(nl);
         }
 
+        if (!analysis.nonPublicMethodNames().isEmpty()) {
+            sb.append("FORBIDDEN — DO NOT CALL FROM TEST (private/protected — causes compilation error):").append(nl);
+            for (String name : analysis.nonPublicMethodNames()) {
+                sb.append("  ").append(name).append("(...)").append(nl);
+            }
+            sb.append(nl);
+        }
+
+        if (sourceCode.contains("@Configuration") || sourceCode.contains("@ControllerAdvice")) {
+            sb.append("NOTE: This is a @Configuration or @ControllerAdvice class. Special rules:").append(nl);
+            sb.append("- Test ONLY the @Bean/@ExceptionHandler methods listed in METHODS TO TEST above.").append(nl);
+            sb.append("- Do NOT mock Spring Security DSL builders (HttpSecurity, WebSecurityConfigurerAdapter, etc.).").append(nl);
+            sb.append("- Do NOT use reflection (getDeclaredMethod, setAccessible, invoke) to inspect framework internals.").append(nl);
+            sb.append("  Framework classes like DaoAuthenticationProvider have NO public getters for their internal state.").append(nl);
+            sb.append("  DaoAuthenticationProvider.getUserDetailsService() and getPasswordEncoder() are PROTECTED — compilation error.").append(nl);
+            sb.append("- For @Bean methods returning framework objects (AuthenticationProvider, PasswordEncoder, etc.):").append(nl);
+            sb.append("  assert ONLY: `assertNotNull(result); assertTrue(result instanceof ExpectedType);`").append(nl);
+            sb.append("  DO NOT cast to DaoAuthenticationProvider and call methods on it.").append(nl);
+            sb.append("- For @Bean methods that accept a parameter (e.g. AuthenticationConfiguration): mock the parameter,").append(nl);
+            sb.append("  stub its relevant methods, call the @Bean method on `subject`, assert the returned value is not null.").append(nl);
+            if (sourceCode.contains("UserDetailsService")) {
+                sb.append("- For @Bean UserDetailsService: call subject.userDetailsService() to get the lambda.").append(nl);
+                sb.append("  Use thenAnswer to stub the repository (avoids generic type issues):").append(nl);
+                sb.append("    org.springframework.security.core.userdetails.UserDetails u = mock(org.springframework.security.core.userdetails.UserDetails.class);").append(nl);
+                sb.append("    when(repository.findByUsername(anyString())).thenAnswer(inv -> java.util.Optional.of(u));").append(nl);
+                sb.append("    UserDetails result = subject.userDetailsService().loadUserByUsername(\"user\");").append(nl);
+                sb.append("    assertNotNull(result);").append(nl);
+                sb.append("  For the not-found case: `when(repository.findByUsername(anyString())).thenReturn(Optional.empty());`").append(nl);
+                sb.append("  then `assertThrows(UsernameNotFoundException.class, () -> subject.userDetailsService().loadUserByUsername(\"x\"));`").append(nl);
+            }
+            if (sourceCode.contains("@ControllerAdvice") || sourceCode.contains("BindingResult") || sourceCode.contains("ConstraintViolation")) {
+                sb.append("CRITICAL — @ControllerAdvice handler type mapping: each handler takes a SPECIFIC exception type.").append(nl);
+                sb.append("  NEVER pass the wrong exception type to a handler. Match the @ExceptionHandler annotation:").append(nl);
+                sb.append("  subject.handle01(methodArgumentNotValidException) — MethodArgumentNotValidException ONLY").append(nl);
+                sb.append("  subject.handle02(constraintViolationException)   — ConstraintViolationException ONLY").append(nl);
+                sb.append("  subject.handle03(anyException)                   — Exception ONLY").append(nl);
+                sb.append(nl);
+                sb.append("EXACT PATTERN for handle01 (@ExceptionHandler(MethodArgumentNotValidException.class)):").append(nl);
+                sb.append("    @Mock private MethodArgumentNotValidException mave;").append(nl);
+                sb.append("    // In test:").append(nl);
+                sb.append("    org.springframework.validation.BindingResult br = mock(org.springframework.validation.BindingResult.class);").append(nl);
+                sb.append("    org.springframework.validation.FieldError fe = mock(org.springframework.validation.FieldError.class);").append(nl);
+                sb.append("    when(fe.getField()).thenReturn(\"field\"); when(fe.getDefaultMessage()).thenReturn(\"error\");").append(nl);
+                sb.append("    when(br.getFieldErrors()).thenReturn(java.util.List.of(fe));").append(nl);
+                sb.append("    when(mave.getBindingResult()).thenReturn(br);  // stub BindingResult SEPARATELY").append(nl);
+                sb.append("    ResponseEntity<?> r = subject.handle01(mave);  // pass mave (MethodArgumentNotValidException)").append(nl);
+                sb.append("    assertEquals(HttpStatus.BAD_REQUEST, r.getStatusCode());").append(nl);
+                sb.append("    assertEquals(\"error\", ((java.util.Map<?,?>)r.getBody()).get(\"field\"));").append(nl);
+                sb.append(nl);
+                sb.append("EXACT PATTERN for handle02 (@ExceptionHandler(ConstraintViolationException.class)):").append(nl);
+                sb.append("    @Mock private ConstraintViolationException cve;").append(nl);
+                sb.append("    // In test — use RETURNS_DEEP_STUBS to allow chained calls:").append(nl);
+                sb.append("    jakarta.validation.ConstraintViolation<?> v = mock(jakarta.validation.ConstraintViolation.class, Answers.RETURNS_DEEP_STUBS);").append(nl);
+                sb.append("    when(v.getPropertyPath().toString()).thenReturn(\"field\");  // safe with RETURNS_DEEP_STUBS").append(nl);
+                sb.append("    when(v.getMessage()).thenReturn(\"error\");").append(nl);
+                sb.append("    when(cve.getConstraintViolations()).thenReturn(java.util.Set.of(v));").append(nl);
+                sb.append("    ResponseEntity<?> r = subject.handle02(cve);  // pass cve (ConstraintViolationException)").append(nl);
+                sb.append("    assertEquals(HttpStatus.BAD_REQUEST, r.getStatusCode());").append(nl);
+                sb.append("    assertEquals(\"error\", ((java.util.Map<?,?>)r.getBody()).get(\"field\"));").append(nl);
+                sb.append(nl);
+                sb.append("  NEVER do: `when(violation.getPropertyPath()).thenReturn(mock(Path.class))` (no toString stub — wrong key!)").append(nl);
+                sb.append("  NEVER do: `when(ex.getBindingResult().getFieldErrors())...` — NPE!").append(nl);
+                sb.append("  NEVER do: `new FieldError(..., violation)` — FieldError takes String args only.").append(nl);
+            }
+            sb.append(nl);
+        }
+
         sb.append("COVERAGE RULES per method:").append(nl);
         sb.append("- assert the actual return value (not just non-null)").append(nl);
+        sb.append("- CRITICAL — assert ONLY what the code actually does: read the method body carefully.").append(nl);
+        sb.append("  If the method always returns the same value (e.g. `return new ResponseEntity<>(x, HttpStatus.OK)`),").append(nl);
+        sb.append("  assert exactly that value. Do NOT assert status codes or return values that the code cannot produce.").append(nl);
         sb.append("- cover each branch (if/else, orElse, ternary, guard clause)").append(nl);
         if (analysis.usesOptional()) {
             sb.append("- mock Optional.of(...) for found and Optional.empty() for not-found paths").append(nl);
@@ -198,6 +268,29 @@ public class CreateTestPromptService implements CreateTestPromptUseCase {
             sb.append("- use assertThrows for exception paths").append(nl);
         }
         sb.append("- use verify() on mocks when the observable result is a collaborator call").append(nl);
+        sb.append("- CRITICAL — @BeforeEach Mockito stubs: With @ExtendWith(MockitoExtension.class) strict mode, EVERY stub set up in @BeforeEach").append(nl);
+        sb.append("  MUST be used in EVERY @Test method. If a stub is only needed by one test, put it INSIDE that @Test method, not in @BeforeEach.").append(nl);
+        sb.append("  Unused @BeforeEach stubs cause UnnecessaryStubbing and fail every test that doesn't use them.").append(nl);
+        sb.append("  PREFERRED: make each @Test method fully self-contained with its own stubs.").append(nl);
+        sb.append("- CRITICAL — chained mock calls in when(): NEVER write `when(mock.getX().getY()).thenReturn(v)`.").append(nl);
+        sb.append("  `mock.getX()` returns null by default, then `null.getY()` throws NullPointerException.").append(nl);
+        sb.append("  ALWAYS stub each step separately:").append(nl);
+        sb.append("    SomeType x = mock(SomeType.class);").append(nl);
+        sb.append("    when(mock.getX()).thenReturn(x);").append(nl);
+        sb.append("    when(x.getY()).thenReturn(v);").append(nl);
+        sb.append("  Common examples that require this pattern:").append(nl);
+        sb.append("  * MethodArgumentNotValidException: `BindingResult br = mock(BindingResult.class);`").append(nl);
+        sb.append("    `when(ex.getBindingResult()).thenReturn(br);`").append(nl);
+        sb.append("    `when(br.getFieldErrors()).thenReturn(List.of(fieldError));`").append(nl);
+        sb.append("  * ConstraintViolation: `Path path = mock(Path.class);`").append(nl);
+        sb.append("    `when(violation.getPropertyPath()).thenReturn(path);`").append(nl);
+        sb.append("    `when(path.toString()).thenReturn(\"fieldName\");`").append(nl);
+        sb.append("- CRITICAL — only test PUBLIC methods: NEVER call private or protected methods directly").append(nl);
+        sb.append("  from the test class. If a method is private/protected it cannot be called from outside").append(nl);
+        sb.append("  the class and any such call will cause a compilation error.").append(nl);
+        sb.append("- CRITICAL — exception stubs: use `new RuntimeException()` (unchecked) in thenThrow/doThrow").append(nl);
+        sb.append("  UNLESS the mocked method's signature explicitly declares `throws SomeCheckedException`.").append(nl);
+        sb.append("  Throwing a checked exception from a method that doesn't declare it causes a MockitoException.").append(nl);
         sb.append("- CRITICAL — argument matchers: if the method body creates a NEW object internally").append(nl);
         sb.append("  (e.g. `Autor autor = new Autor(); autor.setId(idAutor); repo.findByAutor(autor);`)").append(nl);
         sb.append("  you CANNOT match that instance in the test. Use `any(Autor.class)` in both").append(nl);
@@ -211,6 +304,31 @@ public class CreateTestPromptService implements CreateTestPromptUseCase {
         sb.append("  MUST have X set to a real non-null value before the call (e.g. `param.setX(\"value\")` for String,").append(nl);
         sb.append("  `param.setX(2023)` for int). Forgetting to set a String field leaves it null, which causes").append(nl);
         sb.append("  NullPointerException in setters that enforce `@Nonnull` constraints.").append(nl);
+        if (sourceCode.contains("generateToken") && sourceCode.contains("extractUsername")) {
+            sb.append("CRITICAL — JWT token testing: when testing extractUsername, extractClaim, isTokenValid:").append(nl);
+            sb.append("- Do NOT create tokens manually with Jwts.builder() — the internal key derivation may differ.").append(nl);
+            sb.append("- ALWAYS create test tokens using the service's own `subject.generateToken(user)` method.").append(nl);
+            sb.append("  Flow: `String token = subject.generateToken(user); subject.extractUsername(token);`").append(nl);
+            sb.append("- The `generateToken` call on the SAME `subject` instance uses the SAME key → tokens are valid.").append(nl);
+            sb.append(nl);
+        }
+        sb.append("- CRITICAL — collaborator return types: infer the return type of each collaborator call from the").append(nl);
+        sb.append("  LOCAL VARIABLE TYPE in the method body. If the body says `Livro x = service.findById(id)`,").append(nl);
+        sb.append("  then `service.findById` returns `Livro` — stub with `when(service.findById(any())).thenReturn(new Livro())`.").append(nl);
+        sb.append("  If the body says `Optional<Livro> x = service.findById(id)`, it returns `Optional<Livro>`.").append(nl);
+        sb.append("  Do NOT assume Optional when the variable type is the plain entity. Wrong return type causes compilation error.").append(nl);
+        sb.append("- CRITICAL — entity field names: use ONLY setters that exist on the entity. Do not invent field names").append(nl);
+        sb.append("  like `setAutorId()` unless that exact field appears in the source. Check the SOURCE CLASS imports and body.").append(nl);
+        sb.append("  If the entity field is a foreign key stored as a Long, use `setAutor(autorObject)` or `setAutorId(id)`").append(nl);
+        sb.append("  ONLY if those names actually appear in the entity source. When in doubt, use the no-arg constructor alone.").append(nl);
+        sb.append("- CRITICAL — argument transformation: if the method transforms an argument before passing it to").append(nl);
+        sb.append("  a collaborator (e.g. `String token = header.substring(7); service.extractUsername(token);`),").append(nl);
+        sb.append("  the collaborator receives the TRANSFORMED value, not the original. The stub MUST reflect this.").append(nl);
+        sb.append("  SAFE approach: use `anyString()` or `any(Type.class)` in stubs for collaborators that receive").append(nl);
+        sb.append("  internally-transformed values, so the stub matches regardless of the exact transformed content.").append(nl);
+        sb.append("- CRITICAL — exact method signatures: call each method with EXACTLY the parameter count and types").append(nl);
+        sb.append("  shown in METHODS TO TEST. Do NOT add extra parameters or change types. A method listed as").append(nl);
+        sb.append("  `extractUsername(String token)` takes ONE String — do not call it with two arguments.").append(nl);
         sb.append("- use descriptive test method names").append(nl);
         sb.append(nl);
 
