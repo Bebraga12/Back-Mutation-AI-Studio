@@ -10,7 +10,6 @@ import com.mutation.mutation_ai_studio.domain.model.TestPromptBatch;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -110,14 +109,18 @@ class CreateTestPromptServiceTest {
         assertEquals(1, batch.totalSelected());
         assertEquals(1, batch.prompts().size());
 
-        String sanitizedSource = capturedSource.get();
-        assertNotNull(sanitizedSource);
-        assertFalse(sanitizedSource.contains("/*"));
-        assertFalse(sanitizedSource.contains("//"));
-        assertTrue(sanitizedSource.contains("package com.example.books;"));
-        assertTrue(sanitizedSource.contains("public class BookService"));
+        // O analyzer recebe o source ORIGINAL (com comentários intactos) para não
+        // confundir "//" dentro de strings com comentários de linha
+        String rawSourcePassedToAnalyzer = capturedSource.get();
+        assertNotNull(rawSourcePassedToAnalyzer);
+        assertTrue(rawSourcePassedToAnalyzer.contains("package com.example.books;"));
+        assertTrue(rawSourcePassedToAnalyzer.contains("public class BookService"));
 
+        // O prompt gerado para a IA contém o source SANITIZADO (sem comentários)
         String prompt = batch.prompts().getFirst().prompt();
+        assertFalse(prompt.contains("/* bloco removido */"));
+        assertFalse(prompt.contains("// linha removida"));
+        assertTrue(prompt.contains("public class BookService"));
         assertTrue(prompt.contains("BookServiceTest"));
         assertTrue(prompt.contains("com.example.books"));
         assertTrue(prompt.contains("@Mock"));

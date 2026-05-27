@@ -21,6 +21,26 @@ public class JavaParserSourceCodeAnalyzerAdapter implements SourceCodeAnalyzerPo
 
     @Override
     public ClassAnalysis analyze(Path projectRoot, JavaClassCandidate candidate, String sourceCode) {
+        try {
+            return parseAndAnalyze(candidate, sourceCode);
+        } catch (RuntimeException ex) {
+            // JavaParser pode falhar em código com sintaxe não suportada (Java preview features,
+            // annotations exóticas, etc.). Retorna análise mínima para não travar a geração do lote.
+            return new ClassAnalysis(
+                    candidate.className(),
+                    candidate.packageName(),
+                    "nenhum construtor explícito identificado",
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    sourceCode.contains("Optional<") || sourceCode.contains("Optional."),
+                    sourceCode.contains("throw ") || sourceCode.contains("throws ")
+            );
+        }
+    }
+
+    private ClassAnalysis parseAndAnalyze(JavaClassCandidate candidate, String sourceCode) {
         CompilationUnit compilationUnit = StaticJavaParser.parse(sourceCode);
         ClassOrInterfaceDeclaration declaration = compilationUnit.findFirst(ClassOrInterfaceDeclaration.class)
                 .orElseThrow(() -> new IllegalStateException("Classe não encontrada para análise: " + candidate.fullyQualifiedName()));

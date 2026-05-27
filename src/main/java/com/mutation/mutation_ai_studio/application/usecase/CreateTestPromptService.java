@@ -49,8 +49,11 @@ public class CreateTestPromptService implements CreateTestPromptUseCase {
 
     private ClassTestPrompt toPrompt(Path projectRoot, JavaClassCandidate candidate) {
         Path sourceFile = projectRoot.resolve("src/main/java").resolve(candidate.relativePath()).normalize();
-        String sourceCode = sanitizeSourceCode(readSourceCode(sourceFile));
-        ClassAnalysis analysis = sourceCodeAnalyzerPort.analyze(projectRoot, candidate, sourceCode);
+        String rawSourceCode = readSourceCode(sourceFile);
+        // JavaParser recebe o source original — strings com "://" não são confundidas com comentários
+        ClassAnalysis analysis = sourceCodeAnalyzerPort.analyze(projectRoot, candidate, rawSourceCode);
+        // O AI recebe a versão sanitizada (sem comentários) para economizar tokens
+        String sourceCode = sanitizeSourceCode(rawSourceCode);
         List<String> dependencies = combineDependencies(analysis);
         String prompt = buildPrompt(candidate, sourceCode, dependencies, analysis);
 
