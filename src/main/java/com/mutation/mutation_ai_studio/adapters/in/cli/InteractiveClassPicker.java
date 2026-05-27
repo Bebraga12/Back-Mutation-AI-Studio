@@ -36,7 +36,7 @@ class InteractiveClassPicker {
     private void printRecommendation(List<JavaClassCandidate> all) {
         long baixa = all.stream().filter(c -> complexity(c) == Complexity.BAIXA).count();
         long media = all.stream().filter(c -> complexity(c) == Complexity.MEDIA).count();
-        System.out.printf("  Dica: modelos pequenos (7B) geram melhores testes para classes BAIXA e MÉDIA.%n");
+        System.out.printf("  Modelos pequenos (7B) geram melhores testes para classes BAIXA e MÉDIA.%n");
         System.out.printf("  Disponíveis: %d BAIXA + %d MÉDIA + %d ALTA%n", baixa, media,
                 all.size() - baixa - media);
         System.out.println();
@@ -48,14 +48,15 @@ class InteractiveClassPicker {
         Scanner scanner = new Scanner(System.in); // NOSONAR
         while (true) {
             System.out.println("Selecione as classes desejadas:");
-            System.out.println("  → Números separados por vírgula  (ex: 1,3,5)");
+            System.out.println("  → Números (vírgula ou espaço)    (ex: 1,3,5  ou  3 10 11)");
             System.out.println("  → Intervalo                      (ex: 1-5)");
             System.out.println("  → Combinação                     (ex: 1-3,7,9)");
             System.out.println("  → Enter sem digitar              (seleciona todas)");
             System.out.println("  → 0                              (cancela)");
             System.out.print("Sua escolha: ");
 
-            String input = scanner.nextLine().trim();
+            // Normalize: spaces between numbers become commas so "3 10 11" == "3,10,11"
+            String input = scanner.nextLine().trim().replaceAll("\\s+", ",");
 
             if (input.isEmpty()) {
                 System.out.printf("%nTodas as %d classes selecionadas.%n%n", all.size());
