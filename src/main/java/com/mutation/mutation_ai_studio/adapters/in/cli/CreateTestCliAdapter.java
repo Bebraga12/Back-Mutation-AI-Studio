@@ -3,10 +3,14 @@ package com.mutation.mutation_ai_studio.adapters.in.cli;
 import com.mutation.mutation_ai_studio.application.port.in.CreateTestPromptUseCase;
 import com.mutation.mutation_ai_studio.application.port.in.ExecuteGeneratedTestBatchUseCase;
 import com.mutation.mutation_ai_studio.application.port.in.GenerateTestFromPromptUseCase;
+import com.mutation.mutation_ai_studio.application.port.in.ScanProjectUseCase;
+import com.mutation.mutation_ai_studio.application.port.out.SelectionRepositoryPort;
 import com.mutation.mutation_ai_studio.application.port.out.TestPromptRepositoryPort;
 import com.mutation.mutation_ai_studio.domain.model.ClassTestPrompt;
 import com.mutation.mutation_ai_studio.domain.model.GeneratedTestBatch;
 import com.mutation.mutation_ai_studio.domain.model.GeneratedTestExecutionResult;
+import com.mutation.mutation_ai_studio.domain.model.JavaClassCandidate;
+import com.mutation.mutation_ai_studio.domain.model.SelectionSnapshot;
 import com.mutation.mutation_ai_studio.domain.model.TestPromptBatch;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -15,6 +19,7 @@ import org.springframework.stereotype.Component;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -26,19 +31,27 @@ public class CreateTestCliAdapter implements ApplicationRunner {
     private static final String TEST_COMMAND = "test";
     private static final String TEST_ALIAS = "t";
 
+    private static final String PICK_FLAG = "--pick";
+
     private final CreateTestPromptUseCase createTestPromptUseCase;
     private final GenerateTestFromPromptUseCase generateTestFromPromptUseCase;
     private final ExecuteGeneratedTestBatchUseCase executeGeneratedTestBatchUseCase;
     private final TestPromptRepositoryPort testPromptRepository;
+    private final ScanProjectUseCase scanProjectUseCase;
+    private final SelectionRepositoryPort selectionRepositoryPort;
 
     public CreateTestCliAdapter(CreateTestPromptUseCase createTestPromptUseCase,
                                 GenerateTestFromPromptUseCase generateTestFromPromptUseCase,
                                 ExecuteGeneratedTestBatchUseCase executeGeneratedTestBatchUseCase,
-                                TestPromptRepositoryPort testPromptRepository) {
+                                TestPromptRepositoryPort testPromptRepository,
+                                ScanProjectUseCase scanProjectUseCase,
+                                SelectionRepositoryPort selectionRepositoryPort) {
         this.createTestPromptUseCase = createTestPromptUseCase;
         this.generateTestFromPromptUseCase = generateTestFromPromptUseCase;
         this.executeGeneratedTestBatchUseCase = executeGeneratedTestBatchUseCase;
         this.testPromptRepository = testPromptRepository;
+        this.scanProjectUseCase = scanProjectUseCase;
+        this.selectionRepositoryPort = selectionRepositoryPort;
     }
 
     @Override
@@ -49,6 +62,14 @@ public class CreateTestCliAdapter implements ApplicationRunner {
         }
 
         Path projectRoot = resolveProjectRoot(sourceArgs);
+
+        if (hasPick(sourceArgs)) {
+            List<JavaClassCandidate> allClasses = scanProjectUseCase.scan(projectRoot);
+            List<JavaClassCandidate> picked = new InteractiveClassPicker().pick(allClasses);
+            selectionRepositoryPort.save(projectRoot, new SelectionSnapshot(
+                    projectRoot.toString(), Instant.now(), picked.size(), picked));
+        }
+
         TestPromptBatch batch = createTestPromptUseCase.create(projectRoot);
         List<ClassTestPrompt> savedPrompts = savePrompts(projectRoot, batch);
         TestPromptBatch savedBatch = new TestPromptBatch(batch.projectRoot(), batch.createdAt(), batch.totalSelected(), savedPrompts);
@@ -64,6 +85,15 @@ public class CreateTestCliAdapter implements ApplicationRunner {
         }
 
         return isCreateToken(sourceArgs[0]) && isTestToken(sourceArgs[1]);
+    }
+
+    private boolean hasPick(String[] sourceArgs) {
+        for (String arg : sourceArgs) {
+            if (PICK_FLAG.equalsIgnoreCase(arg)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isCreateToken(String value) {
