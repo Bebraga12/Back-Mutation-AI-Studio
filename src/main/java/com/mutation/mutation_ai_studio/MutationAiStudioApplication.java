@@ -11,6 +11,7 @@ import java.util.Map;
 public class MutationAiStudioApplication {
 
 	public static void main(String[] args) {
+		System.setProperty("java.awt.headless", "false");
 		SpringApplication application = new SpringApplication(MutationAiStudioApplication.class);
 		boolean cliScanMode = isCliScanMode(args);
 

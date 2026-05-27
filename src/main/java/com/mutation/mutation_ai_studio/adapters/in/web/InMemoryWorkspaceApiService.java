@@ -13,8 +13,23 @@ import com.mutation.mutation_ai_studio.adapters.in.web.dto.MutationRunAcceptedRe
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.MutationRunStatusResponse;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.StartMutationRunRequest;
 import com.mutation.mutation_ai_studio.application.port.in.ScanProjectUseCase;
+import com.mutation.mutation_ai_studio.application.port.in.CreateTestPromptUseCase;
+import com.mutation.mutation_ai_studio.application.port.in.GenerateTestFromPromptUseCase;
+import com.mutation.mutation_ai_studio.application.port.in.ValidateGeneratedTestsUseCase;
+import com.mutation.mutation_ai_studio.application.port.in.RefineGeneratedTestsUseCase;
+import com.mutation.mutation_ai_studio.application.port.out.SelectionRepositoryPort;
 import com.mutation.mutation_ai_studio.domain.model.JavaClassCandidate;
+import com.mutation.mutation_ai_studio.domain.model.ClassTestPrompt;
+import com.mutation.mutation_ai_studio.domain.model.TestPromptBatch;
+import com.mutation.mutation_ai_studio.domain.model.GeneratedTestBatch;
+import com.mutation.mutation_ai_studio.domain.model.ValidatedTestBatch;
+import com.mutation.mutation_ai_studio.domain.model.RefinementBatch;
+import com.mutation.mutation_ai_studio.domain.model.RefinementResult;
+import com.mutation.mutation_ai_studio.domain.model.ValidatedTestResult;
+import com.mutation.mutation_ai_studio.domain.model.SelectionSnapshot;
 import org.springframework.stereotype.Service;
+
+import java.time.Instant;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,6 +58,12 @@ public class InMemoryWorkspaceApiService {
             List.of());
 
     private final ScanProjectUseCase scanProjectUseCase;
+    private final CreateTestPromptUseCase createTestPromptUseCase;
+    private final GenerateTestFromPromptUseCase generateTestFromPromptUseCase;
+    private final ValidateGeneratedTestsUseCase validateGeneratedTestsUseCase;
+    private final RefineGeneratedTestsUseCase refineGeneratedTestsUseCase;
+    private final SelectionRepositoryPort selectionRepositoryPort;
+
     private final Map<String, WorkspaceState> workspaceByProjectId = new ConcurrentHashMap<>();
     private final Map<String, MutationRunState> mutationRunsByRunId = new ConcurrentHashMap<>();
     private final ExecutorService mutationRunExecutor = Executors.newCachedThreadPool();
@@ -50,8 +71,19 @@ public class InMemoryWorkspaceApiService {
     private final PitestReportLoader pitestReportLoader = new PitestReportLoader();
     private final CommandExecutor commandExecutor = new CommandExecutor(RUN_TIMEOUT_MINUTES, MAX_OUTPUT_LINES);
 
-    public InMemoryWorkspaceApiService(ScanProjectUseCase scanProjectUseCase) {
+    public InMemoryWorkspaceApiService(
+            ScanProjectUseCase scanProjectUseCase,
+            CreateTestPromptUseCase createTestPromptUseCase,
+            GenerateTestFromPromptUseCase generateTestFromPromptUseCase,
+            ValidateGeneratedTestsUseCase validateGeneratedTestsUseCase,
+            RefineGeneratedTestsUseCase refineGeneratedTestsUseCase,
+            SelectionRepositoryPort selectionRepositoryPort) {
         this.scanProjectUseCase = scanProjectUseCase;
+        this.createTestPromptUseCase = createTestPromptUseCase;
+        this.generateTestFromPromptUseCase = generateTestFromPromptUseCase;
+        this.validateGeneratedTestsUseCase = validateGeneratedTestsUseCase;
+        this.refineGeneratedTestsUseCase = refineGeneratedTestsUseCase;
+        this.selectionRepositoryPort = selectionRepositoryPort;
         seed();
     }
 
@@ -207,9 +239,50 @@ public class InMemoryWorkspaceApiService {
             return;
         }
 
+        // 1. Gera e valida os testes usando a IA (Ollama) em segundo plano antes de rodar o PIT
+        runState.markRunning("Gerando testes com IA local (Ollama)...", List.of());
+        try {
+            // Cria a seleção do projeto no arquivo selection.json dinamicamente
+            List<JavaClassCandidate> candidates = new ArrayList<>();
+            for (String fqcn : runState.classes()) {
+                String className = fqcn.substring(fqcn.lastIndexOf('.') + 1);
+                String relPath = fqcn.replace('.', '/') + ".java";
+                candidates.add(new JavaClassCandidate(className, fqcn, relPath));
+            }
+            SelectionSnapshot selection = new SelectionSnapshot(repositoryRoot.toString(), Instant.now(), candidates.size(), candidates);
+            selectionRepositoryPort.save(repositoryRoot, selection);
+
+            // Executa o pipeline de geração de testes com IA do Hexagonal
+            TestPromptBatch batch = createTestPromptUseCase.create(repositoryRoot);
+            GeneratedTestBatch generatedBatch = generateTestFromPromptUseCase.generate(repositoryRoot, batch);
+            ValidatedTestBatch validatedBatch = validateGeneratedTestsUseCase.validate(repositoryRoot, batch, generatedBatch);
+            RefinementBatch refinementBatch = refineGeneratedTestsUseCase.refine(repositoryRoot, batch, validatedBatch);
+
+            // Copia os testes aprovados para a pasta real src/test/java do projeto alvo
+            int approvedCount = 0;
+            for (RefinementResult result : refinementBatch.results()) {
+                ValidatedTestResult finalResult = result.finalResult();
+                if (finalResult.approved()) {
+                    String relPath = finalResult.fullyQualifiedName().replace('.', '/') + "Test.java";
+                    Path testDestPath = repositoryRoot.resolve("src/test/java").resolve(relPath).normalize();
+                    Files.createDirectories(testDestPath.getParent());
+                    Files.writeString(testDestPath, finalResult.sanitizedCode());
+                    approvedCount++;
+                }
+            }
+
+            if (approvedCount == 0) {
+                runState.markFailed("A IA gerou testes, mas nenhum deles passou nas validações de compilação/semântica.", null);
+                return;
+            }
+        } catch (Exception e) {
+            runState.markFailed("Falha na geração de testes com a IA: " + e.getMessage(), null);
+            return;
+        }
+
         boolean pitConfigured = pitestReportLoader.hasPitestPlugin(repositoryRoot);
         List<String> command = buildRunCommand(runState.mavenPath(), runState.classes(), pitConfigured);
-        runState.markRunning("Executando Maven no repositorio selecionado.", command);
+        runState.markRunning("Executando testes e PIT Mutation Testing no repositório...", command);
 
         CommandExecutionResult execution;
         try {

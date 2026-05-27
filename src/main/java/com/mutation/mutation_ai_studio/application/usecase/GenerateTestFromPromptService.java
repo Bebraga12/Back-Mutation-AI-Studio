@@ -76,14 +76,31 @@ public class GenerateTestFromPromptService implements GenerateTestFromPromptUseC
         }
 
         String sanitized = rawResponse.trim();
-        Matcher markdownMatcher = MARKDOWN_FENCE_PATTERN.matcher(sanitized);
-        if (markdownMatcher.matches()) {
-            sanitized = markdownMatcher.group(1).trim();
+        
+        int codeBlockStart = sanitized.indexOf("```java");
+        int offset = 7;
+        if (codeBlockStart == -1) {
+            codeBlockStart = sanitized.indexOf("```");
+            offset = 3;
+        }
+        
+        if (codeBlockStart != -1) {
+            int codeBlockEnd = sanitized.indexOf("```", codeBlockStart + offset);
+            if (codeBlockEnd != -1) {
+                sanitized = sanitized.substring(codeBlockStart + offset, codeBlockEnd).trim();
+            } else {
+                sanitized = sanitized.substring(codeBlockStart + offset).trim();
+            }
         }
 
         Matcher codeStartMatcher = CODE_START_PATTERN.matcher(sanitized);
         if (codeStartMatcher.find()) {
             sanitized = sanitized.substring(codeStartMatcher.start()).trim();
+        }
+
+        int lastBrace = sanitized.lastIndexOf('}');
+        if (lastBrace >= 0) {
+            sanitized = sanitized.substring(0, lastBrace + 1);
         }
 
         return sanitized.trim();

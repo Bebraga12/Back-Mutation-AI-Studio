@@ -22,6 +22,13 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Map;
+import java.util.HashMap;
+import java.io.File;
+import javax.swing.JFileChooser;
+import javax.swing.SwingUtilities;
+import java.util.concurrent.atomic.AtomicReference;
+
 @RestController
 @RequestMapping("/api")
 @CrossOrigin(origins = {"http://localhost:4200", "http://127.0.0.1:4200"})
@@ -92,6 +99,59 @@ public class WorkspaceApiController {
     public MutationRunStatusResponse getMutationRunStatus(@PathVariable String runId) {
         return workspaceService.findMutationRun(runId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Execucao nao encontrada: " + runId));
+    }
+
+    @PostMapping("/dialog/select-directory")
+    public Map<String, String> selectDirectory() {
+        String script = "Add-Type -AssemblyName System.Windows.Forms; " +
+                        "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; " +
+                        "$dialog.Description = 'Selecionar Pasta do Projeto'; " +
+                        "$result = $dialog.ShowDialog(); " +
+                        "if ($result -eq 'OK') { Write-Output $dialog.SelectedPath }";
+
+        String path = runPowerShellDialog(script);
+        Map<String, String> response = new HashMap<>();
+        response.put("path", path);
+        return response;
+    }
+
+    @PostMapping("/dialog/select-file")
+    public Map<String, String> selectFile() {
+        String script = "Add-Type -AssemblyName System.Windows.Forms; " +
+                        "$dialog = New-Object System.Windows.Forms.OpenFileDialog; " +
+                        "$dialog.Title = 'Selecionar Arquivo Executável do Maven'; " +
+                        "$dialog.Filter = 'Executáveis do Maven (*.cmd;*.bat;*.exe)|*.cmd;*.bat;*.exe|Todos os arquivos (*.*)|*.*'; " +
+                        "$result = $dialog.ShowDialog(); " +
+                        "if ($result -eq 'OK') { Write-Output $dialog.FileName }";
+
+        String path = runPowerShellDialog(script);
+        Map<String, String> response = new HashMap<>();
+        response.put("path", path);
+        return response;
+    }
+
+    private String runPowerShellDialog(String script) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(
+                "powershell", "-NoProfile", "-Command", script
+            );
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(process.getInputStream(), "UTF-8")
+            );
+            String line;
+            StringBuilder output = new StringBuilder();
+            while ((line = reader.readLine()) != null) {
+                output.append(line);
+            }
+            process.waitFor();
+            return output.toString().trim();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "";
+        }
     }
 
     private ResponseStatusException notFound(String projectId) {
