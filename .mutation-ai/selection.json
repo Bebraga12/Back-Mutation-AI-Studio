@@ -1,6 +1,181 @@
 {
   "projectRoot" : "/home/braga/Documentos/Faculdade/TCC/Mutation-AI-Studio",
-  "selectedAt" : "2026-03-26T00:39:12.341888986Z",
-  "totalSelected" : 0,
-  "classes" : [ ]
+  "selectedAt" : "2026-05-27T01:16:09.847458985Z",
+  "totalSelected" : 35,
+  "classes" : [ {
+    "className" : "CreateTestCliAdapter",
+    "packageName" : "com.mutation.mutation_ai_studio.adapters.in.cli",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.adapters.in.cli.CreateTestCliAdapter",
+    "relativePath" : "com/mutation/mutation_ai_studio/adapters/in/cli/CreateTestCliAdapter.java"
+  }, {
+    "className" : "ScanCliAdapter",
+    "packageName" : "com.mutation.mutation_ai_studio.adapters.in.cli",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.adapters.in.cli.ScanCliAdapter",
+    "relativePath" : "com/mutation/mutation_ai_studio/adapters/in/cli/ScanCliAdapter.java"
+  }, {
+    "className" : "ScanOutputFormatter",
+    "packageName" : "com.mutation.mutation_ai_studio.adapters.in.cli",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.adapters.in.cli.ScanOutputFormatter",
+    "relativePath" : "com/mutation/mutation_ai_studio/adapters/in/cli/ScanOutputFormatter.java"
+  }, {
+    "className" : "SelectCliAdapter",
+    "packageName" : "com.mutation.mutation_ai_studio.adapters.in.cli",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.adapters.in.cli.SelectCliAdapter",
+    "relativePath" : "com/mutation/mutation_ai_studio/adapters/in/cli/SelectCliAdapter.java"
+  }, {
+    "className" : "StatusCliAdapter",
+    "packageName" : "com.mutation.mutation_ai_studio.adapters.in.cli",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.adapters.in.cli.StatusCliAdapter",
+    "relativePath" : "com/mutation/mutation_ai_studio/adapters/in/cli/StatusCliAdapter.java"
+  }, {
+    "className" : "FileGeneratedTestRepositoryAdapter",
+    "packageName" : "com.mutation.mutation_ai_studio.adapters.out.filesystem",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.adapters.out.filesystem.FileGeneratedTestRepositoryAdapter",
+    "relativePath" : "com/mutation/mutation_ai_studio/adapters/out/filesystem/FileGeneratedTestRepositoryAdapter.java"
+  }, {
+    "className" : "FileSelectionRepositoryAdapter",
+    "packageName" : "com.mutation.mutation_ai_studio.adapters.out.filesystem",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.adapters.out.filesystem.FileSelectionRepositoryAdapter",
+    "relativePath" : "com/mutation/mutation_ai_studio/adapters/out/filesystem/FileSelectionRepositoryAdapter.java"
+  }, {
+    "className" : "FileSystemTestWorkspaceAdapter",
+    "packageName" : "com.mutation.mutation_ai_studio.adapters.out.filesystem",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.adapters.out.filesystem.FileSystemTestWorkspaceAdapter",
+    "relativePath" : "com/mutation/mutation_ai_studio/adapters/out/filesystem/FileSystemTestWorkspaceAdapter.java"
+  }, {
+    "className" : "FileTestPromptRepositoryAdapter",
+    "packageName" : "com.mutation.mutation_ai_studio.adapters.out.filesystem",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.adapters.out.filesystem.FileTestPromptRepositoryAdapter",
+    "relativePath" : "com/mutation/mutation_ai_studio/adapters/out/filesystem/FileTestPromptRepositoryAdapter.java"
+  }, {
+    "className" : "JavaParserSourceCodeAnalyzerAdapter",
+    "packageName" : "com.mutation.mutation_ai_studio.adapters.out.process",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.adapters.out.process.JavaParserSourceCodeAnalyzerAdapter",
+    "relativePath" : "com/mutation/mutation_ai_studio/adapters/out/process/JavaParserSourceCodeAnalyzerAdapter.java"
+  }, {
+    "className" : "MavenTestExecutorAdapter",
+    "packageName" : "com.mutation.mutation_ai_studio.adapters.out.process",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.adapters.out.process.MavenTestExecutorAdapter",
+    "relativePath" : "com/mutation/mutation_ai_studio/adapters/out/process/MavenTestExecutorAdapter.java"
+  }, {
+    "className" : "OllamaAiTestGeneratorAdapter",
+    "packageName" : "com.mutation.mutation_ai_studio.adapters.out.process",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.adapters.out.process.OllamaAiTestGeneratorAdapter",
+    "relativePath" : "com/mutation/mutation_ai_studio/adapters/out/process/OllamaAiTestGeneratorAdapter.java"
+  }, {
+    "className" : "CreateTestPromptService",
+    "packageName" : "com.mutation.mutation_ai_studio.application.usecase",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.application.usecase.CreateTestPromptService",
+    "relativePath" : "com/mutation/mutation_ai_studio/application/usecase/CreateTestPromptService.java"
+  }, {
+    "className" : "ExecuteGeneratedTestBatchService",
+    "packageName" : "com.mutation.mutation_ai_studio.application.usecase",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.application.usecase.ExecuteGeneratedTestBatchService",
+    "relativePath" : "com/mutation/mutation_ai_studio/application/usecase/ExecuteGeneratedTestBatchService.java"
+  }, {
+    "className" : "ExecutePromptBatchService",
+    "packageName" : "com.mutation.mutation_ai_studio.application.usecase",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.application.usecase.ExecutePromptBatchService",
+    "relativePath" : "com/mutation/mutation_ai_studio/application/usecase/ExecutePromptBatchService.java"
+  }, {
+    "className" : "GenerateTestFromPromptService",
+    "packageName" : "com.mutation.mutation_ai_studio.application.usecase",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.application.usecase.GenerateTestFromPromptService",
+    "relativePath" : "com/mutation/mutation_ai_studio/application/usecase/GenerateTestFromPromptService.java"
+  }, {
+    "className" : "GeneratedTestFallbackFactory",
+    "packageName" : "com.mutation.mutation_ai_studio.application.usecase",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.application.usecase.GeneratedTestFallbackFactory",
+    "relativePath" : "com/mutation/mutation_ai_studio/application/usecase/GeneratedTestFallbackFactory.java"
+  }, {
+    "className" : "GeneratedTestSanitizer",
+    "packageName" : "com.mutation.mutation_ai_studio.application.usecase",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.application.usecase.GeneratedTestSanitizer",
+    "relativePath" : "com/mutation/mutation_ai_studio/application/usecase/GeneratedTestSanitizer.java"
+  }, {
+    "className" : "GeneratedTestSourceNormalizer",
+    "packageName" : "com.mutation.mutation_ai_studio.application.usecase",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.application.usecase.GeneratedTestSourceNormalizer",
+    "relativePath" : "com/mutation/mutation_ai_studio/application/usecase/GeneratedTestSourceNormalizer.java"
+  }, {
+    "className" : "ReadSelectionStatusService",
+    "packageName" : "com.mutation.mutation_ai_studio.application.usecase",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.application.usecase.ReadSelectionStatusService",
+    "relativePath" : "com/mutation/mutation_ai_studio/application/usecase/ReadSelectionStatusService.java"
+  }, {
+    "className" : "RefineGeneratedTestService",
+    "packageName" : "com.mutation.mutation_ai_studio.application.usecase",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.application.usecase.RefineGeneratedTestService",
+    "relativePath" : "com/mutation/mutation_ai_studio/application/usecase/RefineGeneratedTestService.java"
+  }, {
+    "className" : "RemoveSelectedTargetsService",
+    "packageName" : "com.mutation.mutation_ai_studio.application.usecase",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.application.usecase.RemoveSelectedTargetsService",
+    "relativePath" : "com/mutation/mutation_ai_studio/application/usecase/RemoveSelectedTargetsService.java"
+  }, {
+    "className" : "ScanProjectService",
+    "packageName" : "com.mutation.mutation_ai_studio.application.usecase",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.application.usecase.ScanProjectService",
+    "relativePath" : "com/mutation/mutation_ai_studio/application/usecase/ScanProjectService.java"
+  }, {
+    "className" : "SelectTargetsService",
+    "packageName" : "com.mutation.mutation_ai_studio.application.usecase",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.application.usecase.SelectTargetsService",
+    "relativePath" : "com/mutation/mutation_ai_studio/application/usecase/SelectTargetsService.java"
+  }, {
+    "className" : "ClassAnalysis",
+    "packageName" : "com.mutation.mutation_ai_studio.domain.model",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.domain.model.ClassAnalysis",
+    "relativePath" : "com/mutation/mutation_ai_studio/domain/model/ClassAnalysis.java"
+  }, {
+    "className" : "ClassTestPrompt",
+    "packageName" : "com.mutation.mutation_ai_studio.domain.model",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.domain.model.ClassTestPrompt",
+    "relativePath" : "com/mutation/mutation_ai_studio/domain/model/ClassTestPrompt.java"
+  }, {
+    "className" : "GeneratedTestBatch",
+    "packageName" : "com.mutation.mutation_ai_studio.domain.model",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.domain.model.GeneratedTestBatch",
+    "relativePath" : "com/mutation/mutation_ai_studio/domain/model/GeneratedTestBatch.java"
+  }, {
+    "className" : "GeneratedTestCandidate",
+    "packageName" : "com.mutation.mutation_ai_studio.domain.model",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.domain.model.GeneratedTestCandidate",
+    "relativePath" : "com/mutation/mutation_ai_studio/domain/model/GeneratedTestCandidate.java"
+  }, {
+    "className" : "GeneratedTestExecutionResult",
+    "packageName" : "com.mutation.mutation_ai_studio.domain.model",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.domain.model.GeneratedTestExecutionResult",
+    "relativePath" : "com/mutation/mutation_ai_studio/domain/model/GeneratedTestExecutionResult.java"
+  }, {
+    "className" : "JavaClassCandidate",
+    "packageName" : "com.mutation.mutation_ai_studio.domain.model",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.domain.model.JavaClassCandidate",
+    "relativePath" : "com/mutation/mutation_ai_studio/domain/model/JavaClassCandidate.java"
+  }, {
+    "className" : "MethodAnalysis",
+    "packageName" : "com.mutation.mutation_ai_studio.domain.model",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.domain.model.MethodAnalysis",
+    "relativePath" : "com/mutation/mutation_ai_studio/domain/model/MethodAnalysis.java"
+  }, {
+    "className" : "PromptExecutionResult",
+    "packageName" : "com.mutation.mutation_ai_studio.domain.model",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.domain.model.PromptExecutionResult",
+    "relativePath" : "com/mutation/mutation_ai_studio/domain/model/PromptExecutionResult.java"
+  }, {
+    "className" : "SelectionSnapshot",
+    "packageName" : "com.mutation.mutation_ai_studio.domain.model",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.domain.model.SelectionSnapshot",
+    "relativePath" : "com/mutation/mutation_ai_studio/domain/model/SelectionSnapshot.java"
+  }, {
+    "className" : "TestExecutionFeedback",
+    "packageName" : "com.mutation.mutation_ai_studio.domain.model",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.domain.model.TestExecutionFeedback",
+    "relativePath" : "com/mutation/mutation_ai_studio/domain/model/TestExecutionFeedback.java"
+  }, {
+    "className" : "TestPromptBatch",
+    "packageName" : "com.mutation.mutation_ai_studio.domain.model",
+    "fullyQualifiedName" : "com.mutation.mutation_ai_studio.domain.model.TestPromptBatch",
+    "relativePath" : "com/mutation/mutation_ai_studio/domain/model/TestPromptBatch.java"
+  } ]
 }
