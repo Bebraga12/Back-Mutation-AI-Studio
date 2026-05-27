@@ -109,18 +109,33 @@ final class ScanOutputFormatter {
         System.out.printf("Projeto: %s%n", projectRoot);
         System.out.printf("%d classes encontradas%n%n", classes.size());
 
-        System.out.println("Alta prioridade para testes");
-        printCategoryWithNames(grouped, ScanCategory.SERVICE);
-        printCategoryWithNames(grouped, ScanCategory.CORE);
+        boolean hasHigh = !grouped.get(ScanCategory.SERVICE).isEmpty() || !grouped.get(ScanCategory.CORE).isEmpty();
+        if (hasHigh) {
+            System.out.println("Alta prioridade para testes");
+            printCategoryWithNamesIfNotEmpty(grouped, ScanCategory.SERVICE);
+            printCategoryWithNamesIfNotEmpty(grouped, ScanCategory.CORE);
+        }
 
-        System.out.println("Média prioridade");
-        printCategoryWithNames(grouped, ScanCategory.CONTROLLER);
+        if (!grouped.get(ScanCategory.CONTROLLER).isEmpty()) {
+            System.out.println("Média prioridade");
+            printCategoryWithNames(grouped, ScanCategory.CONTROLLER);
+        }
 
-        System.out.println("Baixa prioridade");
-        printCategoryCountOnly(grouped, ScanCategory.DTO);
-        printCategoryCountOnly(grouped, ScanCategory.ENTITY);
-        printCategoryCountOnly(grouped, ScanCategory.REPOSITORY);
-        printCombinedCount(grouped, "Config/Security", ScanCategory.CONFIG, ScanCategory.SECURITY);
+        int lowCount = grouped.get(ScanCategory.DTO).size()
+                + grouped.get(ScanCategory.ENTITY).size()
+                + grouped.get(ScanCategory.REPOSITORY).size()
+                + grouped.get(ScanCategory.CONFIG).size()
+                + grouped.get(ScanCategory.SECURITY).size();
+        if (lowCount > 0) {
+            System.out.println("Baixa prioridade");
+            printCategoryCountOnlyIfNotEmpty(grouped, ScanCategory.DTO);
+            printCategoryCountOnlyIfNotEmpty(grouped, ScanCategory.ENTITY);
+            printCategoryCountOnlyIfNotEmpty(grouped, ScanCategory.REPOSITORY);
+            int configSecCount = grouped.get(ScanCategory.CONFIG).size() + grouped.get(ScanCategory.SECURITY).size();
+            if (configSecCount > 0) {
+                System.out.printf(" Config/Security (%d)%n", configSecCount);
+            }
+        }
 
         System.out.println();
         System.out.println("Use --verbose para listar todas as classes.");
@@ -140,7 +155,7 @@ final class ScanOutputFormatter {
         printCategoryWithNames(grouped, ScanCategory.SERVICE);
         printCategoryWithNames(grouped, ScanCategory.CORE);
 
-        System.out.println("Dica: use --verbose para ver a listagem completa por categoria.");
+        System.out.println("Use --verbose para ver a listagem completa por categoria.");
     }
 
     private void printVerbose(Path projectRoot, List<JavaClassCandidate> classes, Map<ScanCategory, List<JavaClassCandidate>> grouped) {
@@ -177,16 +192,20 @@ final class ScanOutputFormatter {
                 .forEach(name -> System.out.printf(" - %s%n", name));
     }
 
+    private void printCategoryWithNamesIfNotEmpty(Map<ScanCategory, List<JavaClassCandidate>> grouped, ScanCategory category) {
+        if (!grouped.get(category).isEmpty()) {
+            printCategoryWithNames(grouped, category);
+        }
+    }
+
     private void printCategoryCountOnly(Map<ScanCategory, List<JavaClassCandidate>> grouped, ScanCategory category) {
         System.out.printf(" %s (%d)%n", category.label(), grouped.get(category).size());
     }
 
-    private void printCombinedCount(Map<ScanCategory, List<JavaClassCandidate>> grouped,
-                                    String label,
-                                    ScanCategory first,
-                                    ScanCategory second) {
-        int total = grouped.get(first).size() + grouped.get(second).size();
-        System.out.printf(" %s (%d)%n", label, total);
+    private void printCategoryCountOnlyIfNotEmpty(Map<ScanCategory, List<JavaClassCandidate>> grouped, ScanCategory category) {
+        if (!grouped.get(category).isEmpty()) {
+            printCategoryCountOnly(grouped, category);
+        }
     }
 
     private ScanCategory classify(JavaClassCandidate candidate) {
