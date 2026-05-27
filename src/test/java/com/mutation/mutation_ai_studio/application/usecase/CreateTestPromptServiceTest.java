@@ -89,7 +89,7 @@ class CreateTestPromptServiceTest {
                 "BookService(BookRepository bookRepository)",
                 List.of("BookRepository bookRepository"),
                 List.of("BookRepository bookRepository"),
-                List.of(new MethodAnalysis("list", "List<String>", List.of(), List.of())),
+                List.of(new MethodAnalysis("list", "List<String>", List.of(), List.of(), "{ return List.of(); }")),
                 List.of("java.util.List"),
                 false,
                 false
@@ -118,9 +118,12 @@ class CreateTestPromptServiceTest {
         assertTrue(sanitizedSource.contains("public class BookService"));
 
         String prompt = batch.prompts().getFirst().prompt();
-        assertTrue(prompt.contains("Plano explícito antes da geração"));
-        assertTrue(prompt.contains("com.example.books.BookService"));
+        assertTrue(prompt.contains("BookServiceTest"));
+        assertTrue(prompt.contains("com.example.books"));
+        assertTrue(prompt.contains("@Mock"));
         assertTrue(prompt.contains("BookRepository bookRepository"));
-        assertTrue(prompt.contains("métodos públicos"));
+        assertTrue(prompt.contains("@ExtendWith(MockitoExtension.class)"));
+        assertTrue(prompt.contains("METHODS TO TEST"));
+        assertTrue(prompt.contains("list()"));
     }
 }

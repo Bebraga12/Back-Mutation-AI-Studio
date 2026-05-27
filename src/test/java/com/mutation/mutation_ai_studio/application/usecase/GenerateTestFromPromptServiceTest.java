@@ -49,7 +49,7 @@ class GenerateTestFromPromptServiceTest {
                 "BookService(BookRepository bookRepository)",
                 List.of("BookRepository bookRepository"),
                 List.of("BookRepository bookRepository"),
-                List.of(new MethodAnalysis("list", "List<String>", List.of(), List.of())),
+                List.of(new MethodAnalysis("list", "List<String>", List.of(), List.of(), "{ return List.of(); }")),
                 List.of("java.util.List"),
                 false,
                 false

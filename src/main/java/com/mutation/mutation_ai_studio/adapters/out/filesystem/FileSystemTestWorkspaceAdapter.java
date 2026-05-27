@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.stream.Stream;
 
 @Component
 public class FileSystemTestWorkspaceAdapter implements TestWorkspacePort {
@@ -33,7 +34,30 @@ public class FileSystemTestWorkspaceAdapter implements TestWorkspacePort {
         }
         try {
             Files.deleteIfExists(candidatePath);
+            deleteEmptyParentDirectories(candidatePath.getParent());
         } catch (IOException ignored) {
+        }
+    }
+
+    private void deleteEmptyParentDirectories(Path directory) {
+        while (directory != null) {
+            String normalized = directory.toString().replace('\\', '/');
+            if (normalized.endsWith("src/test/java")) {
+                break;
+            }
+            try (Stream<Path> entries = Files.list(directory)) {
+                if (entries.findAny().isPresent()) {
+                    break;
+                }
+            } catch (IOException e) {
+                break;
+            }
+            try {
+                Files.deleteIfExists(directory);
+            } catch (IOException ignored) {
+                break;
+            }
+            directory = directory.getParent();
         }
     }
 

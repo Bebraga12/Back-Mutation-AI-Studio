@@ -150,7 +150,11 @@ public class CreateTestCliAdapter implements ApplicationRunner {
     private void printExecutionResult(GeneratedTestExecutionResult result) {
         String status = result.feedback().passed() ? "APROVADO" : "FALHOU";
         System.out.printf(" - %s: %s%n", result.candidate().fullyQualifiedName(), status);
-        if (!result.feedback().passed()) {
+        if (result.feedback().passed()) {
+            if (result.preservedPath() != null) {
+                System.out.printf("   salvo em: %s%n", result.preservedPath());
+            }
+        } else {
             result.feedback().errors().stream()
                     .limit(5)
                     .forEach(error -> System.out.printf("   erro: %s%n", error));

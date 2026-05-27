@@ -59,7 +59,7 @@ class ExecuteGeneratedTestBatchServiceTest {
                 "BookService(BookRepository bookRepository)",
                 List.of("BookRepository bookRepository"),
                 List.of("BookRepository bookRepository"),
-                List.of(new MethodAnalysis("list", "List<String>", List.of(), List.of())),
+                List.of(new MethodAnalysis("list", "List<String>", List.of(), List.of(), "{ return List.of(); }")),
                 List.of("java.util.List"),
                 false,
                 false
@@ -113,11 +113,11 @@ class ExecuteGeneratedTestBatchServiceTest {
         assertTrue(result.feedback().errors().isEmpty());
         assertEquals(refinedCandidate.sourceCode(), result.candidate().sourceCode());
         assertEquals(secondWorkspace, result.workspacePath());
-        assertEquals(prompt.savedPath(), result.preservedPath());
+        assertEquals(secondWorkspace, result.preservedPath());
 
         verify(testWorkspacePort, times(2)).writeCandidate(eq(tempDir), any());
         verify(testWorkspacePort).cleanup(firstWorkspace);
-        verify(testWorkspacePort).cleanup(secondWorkspace);
+        verify(testWorkspacePort, never()).cleanup(secondWorkspace);
         verify(refineGeneratedTestService).refine(eq(prompt), any(), any());
         verify(generatedTestRepositoryPort, never()).saveFailed(any(), any(), any());
     }

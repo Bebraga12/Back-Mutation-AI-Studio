@@ -22,6 +22,7 @@ public class MavenTestExecutorAdapter implements TestExecutorPort {
                 "./mvnw",
                 "-Dtest=" + testClassName,
                 "-Djacoco.skip=true",
+                "compile",
                 "test"
         );
         processBuilder.directory(projectRoot.toFile());

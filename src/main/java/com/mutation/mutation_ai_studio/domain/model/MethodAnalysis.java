@@ -6,6 +6,7 @@ public record MethodAnalysis(
         String methodName,
         String returnType,
         List<String> parameters,
-        List<String> thrownExceptions
+        List<String> thrownExceptions,
+        String methodBody
 ) {
 }

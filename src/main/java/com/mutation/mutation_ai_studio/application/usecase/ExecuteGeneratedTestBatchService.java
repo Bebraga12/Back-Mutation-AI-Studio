@@ -46,14 +46,19 @@ public class ExecuteGeneratedTestBatchService implements ExecuteGeneratedTestBat
             for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
                 Path workspacePath = testWorkspacePort.writeCandidate(projectRoot, candidate);
                 lastWorkspacePath = workspacePath;
+
                 try {
                     feedback = testExecutorPort.execute(projectRoot, candidate.testClassName());
-                    if (feedback.passed()) {
-                        break;
-                    }
-                } finally {
+                } catch (RuntimeException e) {
                     testWorkspacePort.cleanup(workspacePath);
+                    throw e;
                 }
+
+                if (feedback.passed()) {
+                    break;
+                }
+
+                testWorkspacePort.cleanup(workspacePath);
 
                 if (attempt < MAX_ATTEMPTS) {
                     ClassTestPrompt prompt = candidate.prompt();
@@ -61,9 +66,9 @@ public class ExecuteGeneratedTestBatchService implements ExecuteGeneratedTestBat
                 }
             }
 
-            Path preservedPath = feedback != null && !feedback.passed()
-                    ? generatedTestRepository.saveFailed(projectRoot, candidate, batch.createdAt())
-                    : candidate.savedPath();
+            Path preservedPath = feedback != null && feedback.passed()
+                    ? lastWorkspacePath
+                    : generatedTestRepository.saveFailed(projectRoot, candidate, batch.createdAt());
 
             results.add(new GeneratedTestExecutionResult(candidate, lastWorkspacePath, preservedPath, feedback));
         }

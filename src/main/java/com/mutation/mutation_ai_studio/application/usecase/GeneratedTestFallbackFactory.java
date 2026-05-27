@@ -21,32 +21,48 @@ final class GeneratedTestFallbackFactory {
         builder.append("package ").append(prompt.analysis().packageName()).append(";\n\n");
 
         for (String importName : prompt.analysis().importedTypes()) {
-            if (importName != null && !importName.isBlank()) {
-                builder.append("import ").append(importName).append(";\n");
+            if (importName == null || importName.isBlank() || isProductionSideImport(importName)) {
+                continue;
             }
+            builder.append("import ").append(importName).append(";\n");
         }
 
         for (String importName : COMMON_IMPORTS) {
             builder.append("import ").append(importName).append(";\n");
         }
 
-        builder.append("""
+        if (!prompt.dependencies().isEmpty()) {
+            builder.append("import org.mockito.Mock;\n");
+        }
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+        builder.append("\nimport static org.junit.jupiter.api.Assertions.assertNotNull;\n");
+        builder.append("import static org.mockito.Mockito.*;\n\n");
 
-@ExtendWith(MockitoExtension.class)
-public class %sTest {
+        builder.append("@ExtendWith(MockitoExtension.class)\n");
+        builder.append("public class ").append(prompt.className()).append("Test {\n\n");
 
-    @InjectMocks
-    private %s subject;
+        for (String dep : prompt.dependencies()) {
+            builder.append("    @Mock\n");
+            builder.append("    private ").append(dep).append(";\n\n");
+        }
 
-    @Test
-    void deveInstanciarSubjeto() {
-        assertNotNull(subject);
-    }
-}
-""".formatted(prompt.className(), prompt.className()));
+        builder.append("    @InjectMocks\n");
+        builder.append("    private ").append(prompt.className()).append(" subject;\n\n");
+
+        builder.append("    @Test\n");
+        builder.append("    void deveInstanciarSubjeto() {\n");
+        builder.append("        assertNotNull(subject);\n");
+        builder.append("    }\n");
+        builder.append("}\n");
 
         return builder.toString();
+    }
+
+    private static boolean isProductionSideImport(String qualifiedName) {
+        return qualifiedName.startsWith("org.springframework.beans.factory.annotation.")
+                || qualifiedName.startsWith("org.springframework.stereotype.")
+                || qualifiedName.startsWith("org.springframework.web.bind.annotation.")
+                || qualifiedName.startsWith("jakarta.persistence.")
+                || qualifiedName.startsWith("javax.persistence.");
     }
 }

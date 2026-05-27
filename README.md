@@ -202,10 +202,10 @@ Saída do comando:
 - caminho do projeto
 - total de classes selecionadas
 - total de prompts gerados
-- total de respostas geradas
-- total de aprovados e rejeitados
-- caminhos dos lotes gerados
-- nomes das classes e sua evolução por tentativa
+- total de testes candidatos gerados
+- total de execuções aprovadas e com falha no Maven
+- caminho do lote gerado
+- resultado por classe (APROVADO ou FALHOU, com erros e caminho do teste falho se houver)
 
 Exemplo de saída:
 
@@ -213,11 +213,16 @@ Exemplo de saída:
 Projeto: /caminho/projeto
 Classes selecionadas: 3
 Prompts gerados: 3
+Testes candidatos gerados: 3
+Execuções aprovadas no Maven: 2
+Execuções com falha no Maven: 1
 Lote salvo em: /caminho/projeto/.mutation-ai/prompts/create-test-20260415-235655
-Classes geradas:
- - com.exemplo.service.UserService
- - com.exemplo.service.AuthService
- - com.exemplo.service.BillingService
+Resultados por classe:
+ - com.exemplo.service.UserService: APROVADO
+ - com.exemplo.service.AuthService: APROVADO
+ - com.exemplo.service.BillingService: FALHOU
+   erro: [ERROR] cannot find symbol
+   teste falho salvo em: /caminho/projeto/.mutation-ai/failed/BillingServiceTest.java
 ```
 
 ### O que cada prompt e execução devem considerar

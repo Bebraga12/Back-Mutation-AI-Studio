@@ -86,11 +86,16 @@ public class JavaParserSourceCodeAnalyzerAdapter implements SourceCodeAnalyzerPo
                 .map(Object::toString)
                 .toList();
 
+        String methodBody = method.getBody()
+                .map(body -> body.toString().trim())
+                .orElse("");
+
         return new MethodAnalysis(
                 method.getNameAsString(),
                 method.getType().asString(),
                 parameters,
-                thrownExceptions
+                thrownExceptions,
+                methodBody
         );
     }
 }

@@ -11,6 +11,7 @@ final class GeneratedTestSanitizer {
         }
 
         String sanitized = generatedCode.replace("\r\n", "\n").trim();
+        sanitized = stripThinkingBlocks(sanitized);
         sanitized = stripMarkdownFences(sanitized);
         sanitized = stripLeadingNoise(sanitized);
         sanitized = sanitized.replace("```java", "");
@@ -22,6 +23,27 @@ final class GeneratedTestSanitizer {
         }
 
         return sanitized.trim();
+    }
+
+    /**
+     * Removes thinking blocks used by reasoning models (e.g. qwen3, deepseek-r1).
+     * Strips content between <think> and </think> tags before processing the code.
+     */
+    private static String stripThinkingBlocks(String text) {
+        String result = text;
+        while (true) {
+            int start = result.indexOf("<think>");
+            if (start < 0) {
+                break;
+            }
+            int end = result.indexOf("</think>", start);
+            if (end < 0) {
+                result = result.substring(0, start).trim();
+                break;
+            }
+            result = (result.substring(0, start) + result.substring(end + "</think>".length())).trim();
+        }
+        return result;
     }
 
     private static String stripMarkdownFences(String text) {

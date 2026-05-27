@@ -28,6 +28,17 @@ public class RefineGeneratedTestService {
                         || error.toLowerCase().contains("@springboottest"));
         boolean hasMissingImports = feedback.errors().stream()
                 .anyMatch(error -> error.toLowerCase().contains("sem import explícito"));
+        boolean hasAssertionMismatch = feedback.errors().stream()
+                .anyMatch(error -> error.toLowerCase().contains("expected:") || error.toLowerCase().contains("but was:"));
+        boolean hasWantedButNotInvoked = feedback.errors().stream()
+                .anyMatch(error -> error.toLowerCase().contains("wanted but not invoked"));
+        boolean likelyArgumentMatcherIssue = (hasAssertionMismatch || hasWantedButNotInvoked)
+                && !hasCannotFindSymbol && !hasWrongTarget;
+        boolean hasNullPointerException = feedback.errors().stream()
+                .anyMatch(error -> error.toLowerCase().contains("nullpointer")
+                        || (error.toLowerCase().contains("nonnull") && error.toLowerCase().contains("null"))
+                        || error.toLowerCase().contains("non-null but is null")
+                        || error.toLowerCase().contains("marked non-null"));
 
         String refinementPrompt = prompt.prompt()
                 + System.lineSeparator()
@@ -38,7 +49,7 @@ public class RefineGeneratedTestService {
                 + "Erros reais:" + System.lineSeparator()
                 + String.join(System.lineSeparator(), feedback.errors()) + System.lineSeparator()
                 + System.lineSeparator()
-                + buildSymbolGuidance(prompt, hasCannotFindSymbol, hasWrongTarget, hasMissingImports) + System.lineSeparator()
+                + buildSymbolGuidance(prompt, hasCannotFindSymbol, hasWrongTarget, hasMissingImports, likelyArgumentMatcherIssue, hasNullPointerException) + System.lineSeparator()
                 + System.lineSeparator()
                 + "Teste anterior:" + System.lineSeparator()
                 + previousCandidate.sourceCode();
@@ -68,7 +79,9 @@ public class RefineGeneratedTestService {
         );
     }
 
-    private String buildSymbolGuidance(ClassTestPrompt prompt, boolean hasCannotFindSymbol, boolean hasWrongTarget, boolean hasMissingImports) {
+    private String buildSymbolGuidance(ClassTestPrompt prompt, boolean hasCannotFindSymbol, boolean hasWrongTarget,
+                                        boolean hasMissingImports, boolean likelyArgumentMatcherIssue,
+                                        boolean hasNullPointerException) {
         if (hasWrongTarget) {
             return "Orientações obrigatórias para corrigir o alvo do teste:" + System.lineSeparator()
                     + "- gere teste exclusivamente para a classe alvo " + prompt.className() + System.lineSeparator()
@@ -77,6 +90,31 @@ public class RefineGeneratedTestService {
                     + "- não use @SpringBootTest" + System.lineSeparator()
                     + "- não use @Autowired" + System.lineSeparator()
                     + "- use teste unitário puro com Mockito e a classe alvo correta";
+        }
+
+        if (likelyArgumentMatcherIssue) {
+            return "The test failed with assertion or invocation mismatches — this is almost certainly a Mockito argument matching problem." + System.lineSeparator()
+                    + "MANDATORY FIXES:" + System.lineSeparator()
+                    + "- Look at every method body shown in METHODS TO TEST above." + System.lineSeparator()
+                    + "- If a method creates a NEW object internally (e.g. `Autor autor = new Autor(); autor.setId(id);`)" + System.lineSeparator()
+                    + "  and passes it to a repository, you CANNOT match that instance in the test — there is no equals()." + System.lineSeparator()
+                    + "- Replace: `when(repo.findByAutor(autor)).thenReturn(...)` and `verify(repo).findByAutor(autor)`" + System.lineSeparator()
+                    + "  with:    `when(repo.findByAutor(any(Autor.class))).thenReturn(...)` and `verify(repo).findByAutor(any(Autor.class))`" + System.lineSeparator()
+                    + "- Apply this pattern for EVERY collaborator call where the argument is constructed inside the method under test." + System.lineSeparator()
+                    + "- Do NOT create a matching instance variable in the test to stub an internally-created object." + System.lineSeparator()
+                    + "- When in doubt about whether equals() exists, prefer `any(Type.class)` over a specific instance.";
+        }
+
+        if (hasNullPointerException && !hasCannotFindSymbol) {
+            return "The test threw a NullPointerException — test data is missing required non-null property values." + System.lineSeparator()
+                    + "MANDATORY FIXES:" + System.lineSeparator()
+                    + "- Look at the method body in METHODS TO TEST: wherever `param.getX()` is passed to a setter," + System.lineSeparator()
+                    + "  the test MUST first call `param.setX(someValue)` to set a real non-null value." + System.lineSeparator()
+                    + "- For String fields: use a descriptive literal like `param.setTitle(\"Test Title\")`." + System.lineSeparator()
+                    + "- For int/long fields: use a valid number like `param.setYear(2023)`." + System.lineSeparator()
+                    + "- Do NOT rely on default values (null/0) when the method will pass those values to a setter" + System.lineSeparator()
+                    + "  annotated with @Nonnull or @NonNull — they enforce null-rejection at runtime." + System.lineSeparator()
+                    + "- Set ALL fields that the method reads from a parameter object before calling the method.";
         }
 
         if (hasMissingImports) {
