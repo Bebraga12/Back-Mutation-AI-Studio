@@ -12,6 +12,7 @@ import com.mutation.mutation_ai_studio.domain.model.GeneratedTestExecutionResult
 import com.mutation.mutation_ai_studio.domain.model.JavaClassCandidate;
 import com.mutation.mutation_ai_studio.domain.model.SelectionSnapshot;
 import com.mutation.mutation_ai_studio.domain.model.TestPromptBatch;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
@@ -32,6 +33,9 @@ public class CreateTestCliAdapter implements ApplicationRunner {
     private static final String TEST_ALIAS = "t";
 
     private static final String PICK_FLAG = "--pick";
+
+    @Value("${spring.ai.ollama.chat.model:qwen2.5-coder:7b}")
+    private String ollamaModel;
 
     private final CreateTestPromptUseCase createTestPromptUseCase;
     private final GenerateTestFromPromptUseCase generateTestFromPromptUseCase;
@@ -65,7 +69,7 @@ public class CreateTestCliAdapter implements ApplicationRunner {
 
         if (hasPick(sourceArgs)) {
             List<JavaClassCandidate> allClasses = scanProjectUseCase.scan(projectRoot);
-            List<JavaClassCandidate> picked = new InteractiveClassPicker().pick(allClasses);
+            List<JavaClassCandidate> picked = new InteractiveClassPicker(ollamaModel).pick(allClasses);
             selectionRepositoryPort.save(projectRoot, new SelectionSnapshot(
                     projectRoot.toString(), Instant.now(), picked.size(), picked));
         }
@@ -158,39 +162,57 @@ public class CreateTestCliAdapter implements ApplicationRunner {
                               List<ClassTestPrompt> savedPrompts,
                               GeneratedTestBatch generatedBatch,
                               List<GeneratedTestExecutionResult> executionResults) {
-        System.out.printf("Projeto: %s%n", projectRoot);
-        System.out.printf("Classes selecionadas: %d%n", batch.totalSelected());
-        System.out.printf("Prompts gerados: %d%n", savedPrompts.size());
-        System.out.printf("Testes candidatos gerados: %d%n", generatedBatch.candidates().size());
+        long approved = executionResults.stream().filter(r -> r.feedback().passed()).count();
+        long failed = executionResults.size() - approved;
 
-        long approved = executionResults.stream().filter(result -> result.feedback().passed()).count();
-        long rejected = executionResults.size() - approved;
-        System.out.printf("Execuções aprovadas no Maven: %d%n", approved);
-        System.out.printf("Execuções com falha no Maven: %d%n", rejected);
+        int nameWidth = executionResults.stream()
+                .mapToInt(r -> r.candidate().className().length())
+                .max().orElse(20);
 
-        Path batchDirectory = savedPrompts.isEmpty()
-                ? projectRoot.resolve(".mutation-ai/prompts")
-                : savedPrompts.getFirst().savedPath().getParent();
+        System.out.println();
+        System.out.printf("Projeto: %s%s%s%n", Ansi.BOLD, projectRoot.getFileName(), Ansi.RESET);
+        System.out.println();
 
-        System.out.printf("Lote salvo em: %s%n", batchDirectory);
-        System.out.println("Resultados por classe:");
-        executionResults.forEach(this::printExecutionResult);
+        executionResults.forEach(r -> printExecutionResult(r, projectRoot, nameWidth));
+
+        System.out.println("  " + "─".repeat(nameWidth + 20));
+        System.out.printf("  %d gerado(s)   ", executionResults.size());
+        System.out.printf("%s%d aprovado(s)%s   ", Ansi.GREEN, approved, Ansi.RESET);
+        if (failed > 0) {
+            System.out.printf("%s%d falhou%s", Ansi.RED, failed, Ansi.RESET);
+        }
+        System.out.println();
+        System.out.println();
     }
 
-    private void printExecutionResult(GeneratedTestExecutionResult result) {
-        String status = result.feedback().passed() ? "APROVADO" : "FALHOU";
-        System.out.printf(" - %s: %s%n", result.candidate().fullyQualifiedName(), status);
+    private void printExecutionResult(GeneratedTestExecutionResult result, Path projectRoot, int nameWidth) {
         if (result.feedback().passed()) {
-            if (result.preservedPath() != null) {
-                System.out.printf("   salvo em: %s%n", result.preservedPath());
-            }
+            String savedPath = result.preservedPath() != null
+                    ? relativize(projectRoot, result.preservedPath())
+                    : "";
+            System.out.printf("  %s✓%s  %-" + nameWidth + "s  %s%s%s%n",
+                    Ansi.GREEN, Ansi.RESET,
+                    result.candidate().className(),
+                    Ansi.GRAY, savedPath, Ansi.RESET);
         } else {
+            System.out.printf("  %s✗%s  %s%s%s%n",
+                    Ansi.RED, Ansi.RESET,
+                    Ansi.BOLD, result.candidate().className(), Ansi.RESET);
             result.feedback().errors().stream()
-                    .limit(5)
-                    .forEach(error -> System.out.printf("   erro: %s%n", error));
+                    .limit(3)
+                    .forEach(e -> System.out.printf("       %s%s%s%n", Ansi.GRAY, e, Ansi.RESET));
             if (result.preservedPath() != null) {
-                System.out.printf("   teste falho salvo em: %s%n", result.preservedPath());
+                System.out.printf("       %s→ %s%s%n",
+                        Ansi.GRAY, relativize(projectRoot, result.preservedPath()), Ansi.RESET);
             }
+        }
+    }
+
+    private String relativize(Path projectRoot, Path absolute) {
+        try {
+            return projectRoot.relativize(absolute).toString();
+        } catch (IllegalArgumentException e) {
+            return absolute.toString();
         }
     }
 }

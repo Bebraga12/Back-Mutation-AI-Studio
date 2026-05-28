@@ -1,7 +1,6 @@
 package com.mutation.mutation_ai_studio.adapters.in.cli;
 
 import com.mutation.mutation_ai_studio.application.port.in.ReadSelectionStatusUseCase;
-import com.mutation.mutation_ai_studio.application.port.out.SelectionRepositoryPort;
 import com.mutation.mutation_ai_studio.domain.model.SelectionSnapshot;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -16,16 +15,11 @@ import java.util.Optional;
 public class StatusCliAdapter implements ApplicationRunner {
 
     private static final String STATUS_COMMAND = "status";
-    private static final String GREEN = "[32m";
-    private static final String RESET = "[0m";
 
     private final ReadSelectionStatusUseCase readSelectionStatusUseCase;
-    private final SelectionRepositoryPort selectionRepositoryPort;
 
-    public StatusCliAdapter(ReadSelectionStatusUseCase readSelectionStatusUseCase,
-                            SelectionRepositoryPort selectionRepositoryPort) {
+    public StatusCliAdapter(ReadSelectionStatusUseCase readSelectionStatusUseCase) {
         this.readSelectionStatusUseCase = readSelectionStatusUseCase;
-        this.selectionRepositoryPort = selectionRepositoryPort;
     }
 
     @Override
@@ -38,21 +32,29 @@ public class StatusCliAdapter implements ApplicationRunner {
         Path projectRoot = resolveProjectRoot(commands);
         Optional<SelectionSnapshot> maybeSelection = readSelectionStatusUseCase.read(projectRoot);
 
-        System.out.printf("Projeto: %s%n%n", projectRoot);
+        System.out.println();
+        System.out.printf("Projeto: %s%s%s%n%n", Ansi.BOLD, projectRoot.getFileName(), Ansi.RESET);
 
         if (maybeSelection.isEmpty()) {
-            System.out.println("Nenhuma seleção encontrada.");
-            System.out.println("Use `mutation-ai select .` para selecionar classes primeiro.");
+            System.out.printf("  %sNenhuma seleção encontrada.%s%n", Ansi.YELLOW, Ansi.RESET);
+            System.out.println("  Use 'mutation-ai select .' ou 'mutation-ai c t --pick' para selecionar classes.");
+            System.out.println();
             return;
         }
 
         SelectionSnapshot selection = maybeSelection.get();
-        System.out.printf("Classes selecionadas (%d):%n%n", selection.totalSelected());
+        int nameWidth = selection.classes().stream()
+                .mapToInt(c -> c.className().length())
+                .max().orElse(20);
 
-        selection.classes().forEach(candidate ->
-                System.out.printf("%s+ %s%s%n", GREEN, candidate.className(), RESET));
+        System.out.printf("  %d classe(s) selecionada(s)%n%n", selection.totalSelected());
 
-        System.out.printf("%nArquivo de seleção: %s%n", selectionRepositoryPort.selectionFilePath(projectRoot));
+        selection.classes().forEach(c -> System.out.printf(
+                "  %-" + nameWidth + "s  %s%s%s%n",
+                c.className(),
+                Ansi.GRAY, c.packageName(), Ansi.RESET));
+
+        System.out.println();
     }
 
     private Path resolveProjectRoot(List<String> commands) {

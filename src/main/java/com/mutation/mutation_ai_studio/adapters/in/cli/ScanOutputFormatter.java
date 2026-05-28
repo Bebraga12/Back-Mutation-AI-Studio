@@ -140,7 +140,7 @@ final class ScanOutputFormatter {
         System.out.println();
         System.out.println("Use --verbose para listar todas as classes.");
         System.out.println("Use --focus testable para ver apenas classes mais testáveis.");
-        System.out.println("Use scan <categoria> para filtrar (service, core, controller, repository, entity, dto, config, security, other).");
+        System.out.println("Use scan <categoria> para filtrar  (service · controller · config · security · core · other).");
     }
 
     private void printFocusTestable(Path projectRoot, List<JavaClassCandidate> classes, Map<ScanCategory, List<JavaClassCandidate>> grouped) {
@@ -165,21 +165,27 @@ final class ScanOutputFormatter {
         System.out.println("Resumo por categoria:");
         for (ScanCategory category : ORDER) {
             int count = grouped.get(category).size();
-            System.out.printf(" - %s: %d%n", category.key(), count);
+            if (count > 0) {
+                System.out.printf("  %-12s  %d%n", category.key(), count);
+            }
         }
 
         System.out.println();
+
+        int nameWidth = classes.stream()
+                .mapToInt(c -> c.className().length())
+                .max().orElse(20);
+
         for (ScanCategory category : ORDER) {
             List<JavaClassCandidate> candidates = grouped.get(category);
             if (candidates.isEmpty()) {
                 continue;
             }
 
-            System.out.printf("%s (%d)%n", category.key(), candidates.size());
-            candidates.forEach(candidate -> System.out.printf(" - %s | %s | %s%n",
-                    candidate.className(),
-                    candidate.fullyQualifiedName(),
-                    candidate.relativePath()));
+            System.out.printf("%s (%d)%n", category.label(), candidates.size());
+            candidates.forEach(c -> System.out.printf(
+                    "  %-" + nameWidth + "s  %s%n",
+                    c.className(), c.fullyQualifiedName()));
             System.out.println();
         }
     }

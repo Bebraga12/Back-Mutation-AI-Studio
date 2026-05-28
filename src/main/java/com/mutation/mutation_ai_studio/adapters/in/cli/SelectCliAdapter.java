@@ -209,17 +209,21 @@ public class SelectCliAdapter implements ApplicationRunner {
     }
 
     private void printSummary(Path projectRoot, SelectionSnapshot selection) {
-        System.out.printf("Projeto: %s%n", projectRoot);
-        System.out.printf("%d classes selecionadas%n", selection.totalSelected());
-
         List<JavaClassCandidate> classes = selection.classes();
-        if (!classes.isEmpty()) {
-            System.out.println("Exemplos de classes selecionadas:");
-            classes.stream()
-                    .limit(8)
-                    .forEach(candidate -> System.out.printf(" - %s%n", candidate.fullyQualifiedName()));
-        }
 
-        System.out.printf("Seleção salva em: %s%n", selectionRepositoryPort.selectionFilePath(projectRoot));
+        int nameWidth = classes.stream()
+                .mapToInt(c -> c.className().length())
+                .max().orElse(20);
+
+        System.out.println();
+        System.out.printf("Projeto: %s%s%s%n", Ansi.BOLD, projectRoot.getFileName(), Ansi.RESET);
+        System.out.printf("%d classe(s) selecionada(s)%n%n", selection.totalSelected());
+
+        classes.forEach(c -> System.out.printf(
+                "  %-" + nameWidth + "s  %s%s%s%n",
+                c.className(),
+                Ansi.GRAY, c.packageName(), Ansi.RESET));
+
+        System.out.println();
     }
 }
