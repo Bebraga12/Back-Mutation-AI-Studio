@@ -72,7 +72,7 @@ class InteractiveClassPicker {
         return -1;
     }
 
-    private List<JavaClassCandidate> readSelection(List<JavaClassCandidate> all) {
+    private List<JavaClassCandidate> readSelection(List<JavaClassCandidate> all, Consumer<List<JavaClassCandidate>> onSelected) {
         // Do not close the Scanner — closing it closes System.in.
         Scanner scanner = new Scanner(System.in); // NOSONAR
         while (true) {
@@ -80,7 +80,7 @@ class InteractiveClassPicker {
             String input = scanner.nextLine().trim().replaceAll("\\s+", ",");
 
             if (input.isEmpty()) {
-                showSpinnerAndPrint(all);
+                showSpinnerAndPrint(all, onSelected);
                 return all;
             }
 
@@ -95,7 +95,7 @@ class InteractiveClassPicker {
                 for (int idx : new TreeSet<>(indices)) {
                     selected.add(all.get(idx - 1));
                 }
-                showSpinnerAndPrint(selected);
+                showSpinnerAndPrint(selected, onSelected);
                 return selected;
             } catch (IllegalArgumentException e) {
                 System.out.printf("  %sEntrada inválida: %s%s%n%n",
@@ -104,14 +104,29 @@ class InteractiveClassPicker {
         }
     }
 
-    private void showSpinnerAndPrint(List<JavaClassCandidate> selected) {
+    private void showSpinnerAndPrint(List<JavaClassCandidate> selected, Consumer<List<JavaClassCandidate>> work) {
         String[] frames = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
-        for (int i = 0; i < 10; i++) {
-            System.out.printf("\r  %s Aplicando seleção...", frames[i % frames.length]);
-            System.out.flush();
-            try { Thread.sleep(70); } catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
-        }
-        System.out.printf("\r%-30s%n", "");
+        AtomicBoolean done = new AtomicBoolean(false);
+
+        Thread spinnerThread = new Thread(() -> {
+            int i = 0;
+            while (!done.get()) {
+                System.out.printf("\r  %s Aplicando seleção...", frames[i++ % frames.length]);
+                System.out.flush();
+                try { Thread.sleep(80); } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        });
+        spinnerThread.setDaemon(true);
+        spinnerThread.start();
+
+        work.accept(selected);
+        done.set(true);
+        try { spinnerThread.join(500); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+
+        System.out.printf("\r%-40s%n", "");
 
         int nameWidth = selected.stream().mapToInt(c -> c.className().length()).max().orElse(20);
         System.out.println();

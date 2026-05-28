@@ -69,9 +69,9 @@ public class CreateTestCliAdapter implements ApplicationRunner {
 
         if (hasPick(sourceArgs)) {
             List<JavaClassCandidate> allClasses = scanProjectUseCase.scan(projectRoot);
-            List<JavaClassCandidate> picked = new InteractiveClassPicker(ollamaModel).pick(allClasses);
-            selectionRepositoryPort.save(projectRoot, new SelectionSnapshot(
-                    projectRoot.toString(), Instant.now(), picked.size(), picked));
+            new InteractiveClassPicker(ollamaModel).pick(allClasses, selected ->
+                    selectionRepositoryPort.save(projectRoot, new SelectionSnapshot(
+                            projectRoot.toString(), Instant.now(), selected.size(), selected)));
         }
 
         TestPromptBatch batch = createTestPromptUseCase.create(projectRoot);
