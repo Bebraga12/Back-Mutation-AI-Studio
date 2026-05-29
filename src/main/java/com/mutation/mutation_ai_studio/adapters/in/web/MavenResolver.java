@@ -8,7 +8,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.LinkedHashSet;
-import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -16,6 +15,9 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 final class MavenResolver {
+
+    private static final boolean IS_WINDOWS =
+            System.getProperty("os.name", "").toLowerCase().contains("win");
 
     ApiMavenDetectionResult resolve(String preferredPath) {
         Set<String> candidates = new LinkedHashSet<>();
@@ -25,13 +27,12 @@ final class MavenResolver {
         }
 
         addEnvMavenCandidates(candidates);
-        addWhereCommandCandidates(candidates, "mvn.cmd");
-        addWhereCommandCandidates(candidates, "mvn");
+        addSystemMavenCandidates(candidates);
         addMavenWrapperCandidates(candidates);
 
         for (String candidate : candidates) {
             Path path = Paths.get(candidate).toAbsolutePath().normalize();
-            if (Files.exists(path) && Files.isRegularFile(path)) {
+            if (Files.exists(path) && Files.isRegularFile(path) && Files.isExecutable(path)) {
                 String resolvedPath = path.toString();
                 return new ApiMavenDetectionResult(
                         true,
@@ -61,15 +62,29 @@ final class MavenResolver {
             return;
         }
 
-        candidates.add(Paths.get(normalized, "bin", "mvn.cmd").toString());
+        if (IS_WINDOWS) {
+            candidates.add(Paths.get(normalized, "bin", "mvn.cmd").toString());
+        }
         candidates.add(Paths.get(normalized, "bin", "mvn").toString());
     }
 
-    private void addWhereCommandCandidates(Set<String> candidates, String command) {
-        ProcessBuilder processBuilder = new ProcessBuilder("cmd", "/c", "where", command);
-        processBuilder.redirectErrorStream(true);
+    private void addSystemMavenCandidates(Set<String> candidates) {
+        if (IS_WINDOWS) {
+            addProcessCandidates(candidates, "cmd", "/c", "where", "mvn.cmd");
+            addProcessCandidates(candidates, "cmd", "/c", "where", "mvn");
+        } else {
+            addProcessCandidates(candidates, "which", "mvn");
+            // Caminhos fixos comuns no Linux/Mac
+            candidates.add("/usr/bin/mvn");
+            candidates.add("/usr/local/bin/mvn");
+            candidates.add("/opt/homebrew/bin/mvn");
+        }
+    }
 
+    private void addProcessCandidates(Set<String> candidates, String... command) {
         try {
+            ProcessBuilder processBuilder = new ProcessBuilder(command);
+            processBuilder.redirectErrorStream(true);
             Process process = processBuilder.start();
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;
@@ -80,10 +95,9 @@ final class MavenResolver {
                     }
                 }
             }
-
             process.waitFor(2, TimeUnit.SECONDS);
         } catch (Exception ignored) {
-            // Ambiente sem where/mvn no PATH.
+            // Comando nao disponivel no PATH.
         }
     }
 
@@ -98,10 +112,13 @@ final class MavenResolver {
             return;
         }
 
+        String mvnFileName = IS_WINDOWS ? "mvn.cmd" : "mvn";
+
         try (Stream<Path> pathStream = Files.walk(wrapperRoot, 8)) {
             pathStream
                     .filter(Files::isRegularFile)
-                    .filter(path -> "mvn.cmd".equalsIgnoreCase(path.getFileName().toString()))
+                    .filter(Files::isExecutable)
+                    .filter(path -> mvnFileName.equalsIgnoreCase(path.getFileName().toString()))
                     .map(path -> path.toAbsolutePath().normalize().toString())
                     .forEach(candidates::add);
         } catch (Exception ignored) {

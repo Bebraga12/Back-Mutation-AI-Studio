@@ -437,18 +437,54 @@ public class InMemoryWorkspaceApiService {
         try {
             List<JavaClassCandidate> candidates = scanProjectUseCase.scan(Paths.get(repositoryPath));
             return candidates.stream()
-                    .map(candidate -> new ApiProjectClass(
-                            normalize(candidate.fullyQualifiedName()).isBlank()
-                                    ? candidate.className()
-                                    : candidate.fullyQualifiedName(),
-                            normalize(candidate.packageName()),
-                            "Detectada",
-                            "soft-blue",
-                            0,
-                            false))
+                    .map(candidate -> {
+                        ClassCost cost = classifyCost(candidate);
+                        return new ApiProjectClass(
+                                normalize(candidate.fullyQualifiedName()).isBlank()
+                                        ? candidate.className()
+                                        : candidate.fullyQualifiedName(),
+                                normalize(candidate.packageName()),
+                                cost.label,
+                                cost.tone,
+                                cost.estimatedMutants,
+                                false);
+                    })
                     .toList();
         } catch (Exception ignored) {
             return List.of();
+        }
+    }
+
+    private ClassCost classifyCost(JavaClassCandidate candidate) {
+        String name = candidate.className().toLowerCase(Locale.ROOT);
+        String pkg  = candidate.packageName() == null ? "" : candidate.packageName().toLowerCase(Locale.ROOT);
+
+        if (name.contains("filter") || name.contains("jwt")
+                || (name.contains("security") && !name.endsWith("service"))
+                || name.endsWith("config") || pkg.endsWith(".config")
+                || (name.contains("exception") && name.contains("handler"))
+                || name.contains("advice")) {
+            return ClassCost.HIGH;
+        }
+        if (name.endsWith("controller")) return ClassCost.MEDIUM;
+        if (name.endsWith("service") || name.endsWith("repository")) return ClassCost.LOW;
+        if (name.contains("exception") || name.contains("handler")) return ClassCost.HIGH;
+        return ClassCost.MEDIUM;
+    }
+
+    private enum ClassCost {
+        LOW   ("Custo baixo",  "emerald",  8),
+        MEDIUM("Custo médio",  "amber",   15),
+        HIGH  ("Custo alto",   "soft-blue", 25);
+
+        final String label;
+        final String tone;
+        final int estimatedMutants;
+
+        ClassCost(String label, String tone, int estimatedMutants) {
+            this.label = label;
+            this.tone = tone;
+            this.estimatedMutants = estimatedMutants;
         }
     }
 

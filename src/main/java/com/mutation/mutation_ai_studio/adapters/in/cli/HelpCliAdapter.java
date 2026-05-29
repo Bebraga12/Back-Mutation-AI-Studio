@@ -2,15 +2,27 @@ package com.mutation.mutation_ai_studio.adapters.in.cli;
 
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.context.ApplicationContext;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import org.springframework.web.context.WebApplicationContext;
 
 @Component
 @Order(0)
 public class HelpCliAdapter implements ApplicationRunner {
 
+    private final ApplicationContext applicationContext;
+
+    public HelpCliAdapter(ApplicationContext applicationContext) {
+        this.applicationContext = applicationContext;
+    }
+
     @Override
     public void run(ApplicationArguments args) {
+        if (applicationContext instanceof WebApplicationContext) {
+            return;
+        }
+
         String[] sourceArgs = args.getSourceArgs();
         boolean noArgs = sourceArgs.length == 0;
         boolean helpFlag = sourceArgs.length > 0
