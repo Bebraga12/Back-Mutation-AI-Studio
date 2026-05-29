@@ -1,5 +1,7 @@
 package com.mutation.mutation_ai_studio.adapters.in.web;
 
+import com.mutation.mutation_ai_studio.adapters.in.web.dto.AiTestRunAcceptedResponse;
+import com.mutation.mutation_ai_studio.adapters.in.web.dto.AiTestRunStatusResponse;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.ApiDashboardData;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.ApiItemsResponse;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.ApiMavenDetectionResult;
@@ -8,6 +10,7 @@ import com.mutation.mutation_ai_studio.adapters.in.web.dto.ApiProjectClass;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.CreateProjectRequest;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.MutationRunAcceptedResponse;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.MutationRunStatusResponse;
+import com.mutation.mutation_ai_studio.adapters.in.web.dto.StartAiTestRunRequest;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.StartMutationRunRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -92,6 +95,24 @@ public class WorkspaceApiController {
     public MutationRunStatusResponse getMutationRunStatus(@PathVariable String runId) {
         return workspaceService.findMutationRun(runId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Execucao nao encontrada: " + runId));
+    }
+
+    @PostMapping("/projects/{projectId}/generate-tests")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public AiTestRunAcceptedResponse startAiTestRun(
+            @PathVariable String projectId,
+            @Valid @RequestBody StartAiTestRunRequest request) {
+        try {
+            return workspaceService.startAiTestRun(projectId, request);
+        } catch (IllegalArgumentException error) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, error.getMessage());
+        }
+    }
+
+    @GetMapping("/ai-test-runs/{runId}")
+    public AiTestRunStatusResponse getAiTestRunStatus(@PathVariable String runId) {
+        return workspaceService.findAiTestRun(runId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Run nao encontrado: " + runId));
     }
 
     private ResponseStatusException notFound(String projectId) {

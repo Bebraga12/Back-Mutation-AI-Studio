@@ -1,5 +1,8 @@
 package com.mutation.mutation_ai_studio.adapters.in.web;
 
+import com.mutation.mutation_ai_studio.adapters.in.web.dto.AiTestClassResult;
+import com.mutation.mutation_ai_studio.adapters.in.web.dto.AiTestRunAcceptedResponse;
+import com.mutation.mutation_ai_studio.adapters.in.web.dto.AiTestRunStatusResponse;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.ApiDashboardData;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.ApiDiffLine;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.ApiDiffSnapshot;
@@ -11,20 +14,36 @@ import com.mutation.mutation_ai_studio.adapters.in.web.dto.ApiProjectClass;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.CreateProjectRequest;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.MutationRunAcceptedResponse;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.MutationRunStatusResponse;
+import com.mutation.mutation_ai_studio.adapters.in.web.dto.StartAiTestRunRequest;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.StartMutationRunRequest;
+import com.mutation.mutation_ai_studio.application.port.in.CreateTestPromptUseCase;
+import com.mutation.mutation_ai_studio.application.port.in.ExecuteGeneratedTestBatchUseCase;
+import com.mutation.mutation_ai_studio.application.port.in.GenerateTestFromPromptUseCase;
 import com.mutation.mutation_ai_studio.application.port.in.ScanProjectUseCase;
+import com.mutation.mutation_ai_studio.application.port.out.SelectionRepositoryPort;
+import com.mutation.mutation_ai_studio.application.port.out.TestPromptRepositoryPort;
+import com.mutation.mutation_ai_studio.domain.model.ClassTestPrompt;
+import com.mutation.mutation_ai_studio.domain.model.GeneratedTestBatch;
+import com.mutation.mutation_ai_studio.domain.model.GeneratedTestExecutionResult;
 import com.mutation.mutation_ai_studio.domain.model.JavaClassCandidate;
+import com.mutation.mutation_ai_studio.domain.model.SelectionSnapshot;
+import com.mutation.mutation_ai_studio.domain.model.TestPromptBatch;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -42,16 +61,36 @@ public class InMemoryWorkspaceApiService {
             List.of(),
             List.of());
 
+    @Value("${spring.ai.ollama.base-url:http://localhost:11434}")
+    private String ollamaBaseUrl;
+
     private final ScanProjectUseCase scanProjectUseCase;
+    private final CreateTestPromptUseCase createTestPromptUseCase;
+    private final GenerateTestFromPromptUseCase generateTestFromPromptUseCase;
+    private final ExecuteGeneratedTestBatchUseCase executeGeneratedTestBatchUseCase;
+    private final SelectionRepositoryPort selectionRepositoryPort;
+    private final TestPromptRepositoryPort testPromptRepositoryPort;
+
     private final Map<String, WorkspaceState> workspaceByProjectId = new ConcurrentHashMap<>();
     private final Map<String, MutationRunState> mutationRunsByRunId = new ConcurrentHashMap<>();
-    private final ExecutorService mutationRunExecutor = Executors.newCachedThreadPool();
+    private final Map<String, AiTestRunState> aiTestRunsByRunId = new ConcurrentHashMap<>();
+    private final ExecutorService executor = Executors.newCachedThreadPool();
     private final MavenResolver mavenResolver = new MavenResolver();
     private final PitestReportLoader pitestReportLoader = new PitestReportLoader();
     private final CommandExecutor commandExecutor = new CommandExecutor(RUN_TIMEOUT_MINUTES, MAX_OUTPUT_LINES);
 
-    public InMemoryWorkspaceApiService(ScanProjectUseCase scanProjectUseCase) {
+    public InMemoryWorkspaceApiService(ScanProjectUseCase scanProjectUseCase,
+                                       CreateTestPromptUseCase createTestPromptUseCase,
+                                       GenerateTestFromPromptUseCase generateTestFromPromptUseCase,
+                                       ExecuteGeneratedTestBatchUseCase executeGeneratedTestBatchUseCase,
+                                       SelectionRepositoryPort selectionRepositoryPort,
+                                       TestPromptRepositoryPort testPromptRepositoryPort) {
         this.scanProjectUseCase = scanProjectUseCase;
+        this.createTestPromptUseCase = createTestPromptUseCase;
+        this.generateTestFromPromptUseCase = generateTestFromPromptUseCase;
+        this.executeGeneratedTestBatchUseCase = executeGeneratedTestBatchUseCase;
+        this.selectionRepositoryPort = selectionRepositoryPort;
+        this.testPromptRepositoryPort = testPromptRepositoryPort;
     }
 
     public List<ApiProject> listProjects() {
@@ -147,7 +186,7 @@ public class InMemoryWorkspaceApiService {
 
         MutationRunState runState = MutationRunState.queued(runId, projectId, mavenBinary.toString(), selectedClasses);
         mutationRunsByRunId.put(runId, runState);
-        mutationRunExecutor.submit(() -> executeMutationRun(runId));
+        executor.submit(() -> executeMutationRun(runId));
 
         return new MutationRunAcceptedResponse(
                 runId,
@@ -166,9 +205,125 @@ public class InMemoryWorkspaceApiService {
                 .map(state -> scanClassesFromProject(state.project()));
     }
 
+    public AiTestRunAcceptedResponse startAiTestRun(String projectId, StartAiTestRunRequest request) {
+        WorkspaceState state = workspaceByProjectId.get(projectId);
+        if (state == null) {
+            throw new IllegalArgumentException("Projeto nao encontrado: " + projectId);
+        }
+
+        String repositoryPath = normalize(state.project().repositoryPath());
+        if (repositoryPath.isBlank()) {
+            throw new IllegalArgumentException("Informe o caminho do repositorio antes de gerar.");
+        }
+
+        Path projectRoot = Paths.get(repositoryPath).toAbsolutePath().normalize();
+        if (!Files.isDirectory(projectRoot)) {
+            throw new IllegalArgumentException("Repositorio nao encontrado: " + projectRoot);
+        }
+
+        Set<String> requestedFqns = request.classes().stream()
+                .map(this::normalize)
+                .filter(s -> !s.isBlank())
+                .collect(Collectors.toSet());
+
+        List<JavaClassCandidate> allCandidates = scanProjectUseCase.scan(projectRoot);
+        List<JavaClassCandidate> selected = allCandidates.stream()
+                .filter(c -> requestedFqns.contains(normalize(c.fullyQualifiedName())))
+                .toList();
+
+        if (selected.isEmpty()) {
+            throw new IllegalArgumentException("Nenhuma classe valida encontrada para as FQNs informadas.");
+        }
+
+        if (!isOllamaRunning()) {
+            throw new IllegalArgumentException(
+                    "Ollama nao esta rodando em " + ollamaBaseUrl + ". Execute `ollama serve` e tente novamente.");
+        }
+
+        selectionRepositoryPort.save(projectRoot, new SelectionSnapshot(
+                projectRoot.toString(), Instant.now(), selected.size(), selected));
+
+        String runId = "ai-run-" + System.currentTimeMillis();
+        AiTestRunState runState = AiTestRunState.queued(runId, projectId, selected.size());
+        aiTestRunsByRunId.put(runId, runState);
+
+        executor.submit(() -> executeAiTestGeneration(runId, runState, projectRoot));
+
+        return new AiTestRunAcceptedResponse(runId, "queued",
+                "Geracao iniciada para " + selected.size() + " classe(s). Acompanhe pelo runId.");
+    }
+
+    public Optional<AiTestRunStatusResponse> findAiTestRun(String runId) {
+        return Optional.ofNullable(aiTestRunsByRunId.get(normalize(runId)))
+                .map(AiTestRunState::toResponse);
+    }
+
+    private void executeAiTestGeneration(String runId, AiTestRunState runState, Path projectRoot) {
+        try {
+            runState.markRunning("Criando prompts e chamando o modelo Ollama...");
+
+            TestPromptBatch batch = createTestPromptUseCase.create(projectRoot);
+
+            List<ClassTestPrompt> savedPrompts = new ArrayList<>();
+            for (ClassTestPrompt prompt : batch.prompts()) {
+                Path savedPath = testPromptRepositoryPort.save(projectRoot, prompt, batch.createdAt());
+                savedPrompts.add(new ClassTestPrompt(
+                        prompt.className(), prompt.fullyQualifiedName(), prompt.relativePath(),
+                        prompt.dependencies(), prompt.analysis(), prompt.sourceCode(),
+                        prompt.prompt(), savedPath));
+            }
+
+            TestPromptBatch savedBatch = new TestPromptBatch(
+                    batch.projectRoot(), batch.createdAt(), batch.totalSelected(), savedPrompts);
+
+            runState.markRunning("Gerando testes com Ollama...");
+            GeneratedTestBatch generatedBatch = generateTestFromPromptUseCase.generate(projectRoot, savedBatch);
+
+            runState.markRunning("Compilando e executando testes gerados...");
+            List<GeneratedTestExecutionResult> executionResults =
+                    executeGeneratedTestBatchUseCase.execute(projectRoot, generatedBatch);
+
+            List<AiTestClassResult> results = executionResults.stream()
+                    .map(r -> new AiTestClassResult(
+                            r.candidate().className(),
+                            r.candidate().fullyQualifiedName(),
+                            r.feedback().passed(),
+                            r.preservedPath() != null ? relativize(projectRoot, r.preservedPath()) : "",
+                            r.feedback().errors().stream().limit(3).toList()))
+                    .toList();
+
+            long passed = results.stream().filter(AiTestClassResult::passed).count();
+            String summary = passed + "/" + results.size() + " testes aprovados pelo compilador e executor.";
+            runState.markCompleted(summary, results);
+
+        } catch (Exception ex) {
+            runState.markFailed("Falha na geracao: " + normalize(ex.getMessage()));
+        }
+    }
+
+    private boolean isOllamaRunning() {
+        try {
+            HttpURLConnection conn = (HttpURLConnection) new URL(ollamaBaseUrl + "/api/tags").openConnection();
+            conn.setConnectTimeout(2000);
+            conn.setReadTimeout(2000);
+            conn.connect();
+            return conn.getResponseCode() < 500;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private String relativize(Path projectRoot, Path absolute) {
+        try {
+            return projectRoot.relativize(absolute).toString();
+        } catch (IllegalArgumentException ignored) {
+            return absolute.toString();
+        }
+    }
+
     public Optional<ApiMavenDetectionResult> detectMaven(String projectId) {
         return Optional.ofNullable(workspaceByProjectId.get(projectId))
-                .map(state -> mavenResolver.resolve(state.project().mavenPath()));
+                .map(state -> mavenResolver.resolve(state.project().mavenPath(), state.project().repositoryPath()));
     }
 
     public Optional<ApiDashboardData> findDashboard(String projectId) {
