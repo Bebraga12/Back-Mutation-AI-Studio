@@ -84,6 +84,56 @@ O modelo usado pelo Ollama fica em:
 
 Voce tambem pode reinstalar e escolher outro modelo com `bash scripts/install.sh`.
 
+### Instalação no Windows
+
+No Windows, o instalador local fica em `scripts/windows/install.ps1` e instala o app em `%LOCALAPPDATA%\Mutation AI Studio`.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/windows/install.ps1
+```
+
+Se quiser sobrescrever uma instalação anterior:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/windows/install.ps1 -Force
+```
+
+Desinstalação:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/windows/uninstall.ps1
+```
+
+O instalador adiciona `mutation-ai` ao `PATH` do usuário apontando para um launcher `.cmd`.
+
+### Gerar instalador `.exe` no Windows
+
+Se você estiver em um Windows com JDK 21 + WiX Toolset instalado, pode gerar um instalador nativo com `jpackage`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/windows/package-installer.ps1
+```
+
+Ou, se preferir o wrapper `.cmd`:
+
+```bat
+scripts\windows\package-installer.cmd
+```
+
+Saída esperada:
+- um instalador `.exe` em `target/windows-installer/`
+- pacote com launcher do Spring Boot embutido
+
+Se quiser recriar do zero:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/windows/package-installer.ps1 -Force
+```
+
+Observação:
+- esse passo precisa ser executado no Windows
+- o `jpackage` para `.exe` depende do WiX Toolset 3.11+ instalado
+
 ---
 
 ## CLI disponível

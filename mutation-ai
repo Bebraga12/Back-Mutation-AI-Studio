@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+find_jar() {
+  local candidate
+  candidate="$(find "$SCRIPT_DIR/target" -maxdepth 1 -type f -name 'mutation-ai-studio-*.jar' ! -name '*.original' 2>/dev/null | sort | tail -n 1 || true)"
+  if [[ -n "${candidate:-}" ]]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  candidate="$(find "$SCRIPT_DIR/app" -maxdepth 1 -type f -name 'mutation-ai-studio-*.jar' 2>/dev/null | sort | tail -n 1 || true)"
+  if [[ -n "${candidate:-}" ]]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  return 1
+}
+
+if ! JAR_PATH="$(find_jar)"; then
+  if [[ -x "$SCRIPT_DIR/mvnw" ]]; then
+    "$SCRIPT_DIR/mvnw" -q -DskipTests package
+  elif [[ -x "$SCRIPT_DIR/mvnw.cmd" ]]; then
+    cmd.exe /c "\"$SCRIPT_DIR\\mvnw.cmd\" -q -DskipTests package"
+  else
+    echo "mutation-ai: não foi possível localizar o jar nem o Maven Wrapper." >&2
+    exit 1
+  fi
+
+  JAR_PATH="$(find_jar)"
+fi
+
+JAVA_BIN="${JAVA_HOME:-}"
+if [[ -n "$JAVA_BIN" ]]; then
+  JAVA_BIN="$JAVA_BIN/bin/java"
+else
+  JAVA_BIN="$(command -v java || true)"
+fi
+
+if [[ -z "${JAVA_BIN:-}" ]]; then
+  echo "mutation-ai: Java não encontrado no PATH ou em JAVA_HOME." >&2
+  exit 1
+fi
+
+exec "$JAVA_BIN" ${MUTATION_AI_OPTS:-} -jar "$JAR_PATH" "$@"
