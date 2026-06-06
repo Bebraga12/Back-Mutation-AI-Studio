@@ -115,6 +115,48 @@ public class WorkspaceApiController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Run nao encontrado: " + runId));
     }
 
+    @PostMapping("/utils/browse-folder")
+    public java.util.Map<String, String> browseFolder() {
+        final java.util.Map<String, String> response = new java.util.HashMap<>();
+        System.setProperty("java.awt.headless", "false");
+        try {
+            javax.swing.JFileChooser chooser = new javax.swing.JFileChooser();
+            chooser.setFileSelectionMode(javax.swing.JFileChooser.DIRECTORIES_ONLY);
+            chooser.setDialogTitle("Selecionar Pasta do Projeto");
+            
+            int returnVal = chooser.showOpenDialog(null);
+            if (returnVal == javax.swing.JFileChooser.APPROVE_OPTION) {
+                response.put("path", chooser.getSelectedFile().getAbsolutePath());
+            } else {
+                response.put("path", "");
+            }
+        } catch (Exception e) {
+            response.put("error", e.getMessage());
+        }
+        return response;
+    }
+
+    @PostMapping("/utils/browse-file")
+    public java.util.Map<String, String> browseFile() {
+        final java.util.Map<String, String> response = new java.util.HashMap<>();
+        System.setProperty("java.awt.headless", "false");
+        try {
+            javax.swing.JFileChooser chooser = new javax.swing.JFileChooser();
+            chooser.setFileSelectionMode(javax.swing.JFileChooser.FILES_ONLY);
+            chooser.setDialogTitle("Selecionar Arquivo");
+            
+            int returnVal = chooser.showOpenDialog(null);
+            if (returnVal == javax.swing.JFileChooser.APPROVE_OPTION) {
+                response.put("path", chooser.getSelectedFile().getAbsolutePath());
+            } else {
+                response.put("path", "");
+            }
+        } catch (Exception e) {
+            response.put("error", e.getMessage());
+        }
+        return response;
+    }
+
     private ResponseStatusException notFound(String projectId) {
         return new ResponseStatusException(HttpStatus.NOT_FOUND, "Projeto nao encontrado: " + projectId);
     }
