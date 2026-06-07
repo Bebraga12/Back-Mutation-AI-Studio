@@ -5,9 +5,7 @@ import com.mutation.mutation_ai_studio.adapters.in.web.dto.AiTestRunStatusRespon
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.ApiDashboardData;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.ApiItemsResponse;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.ApiMavenDetectionResult;
-import com.mutation.mutation_ai_studio.adapters.in.web.dto.ApiProject;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.ApiProjectClass;
-import com.mutation.mutation_ai_studio.adapters.in.web.dto.CreateProjectRequest;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.MutationRunAcceptedResponse;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.MutationRunStatusResponse;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.StartAiTestRunRequest;
@@ -15,7 +13,6 @@ import com.mutation.mutation_ai_studio.adapters.in.web.dto.StartMutationRunReque
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -34,32 +31,6 @@ public class WorkspaceApiController {
 
     public WorkspaceApiController(InMemoryWorkspaceApiService workspaceService) {
         this.workspaceService = workspaceService;
-    }
-
-    @GetMapping("/projects")
-    public ApiItemsResponse<ApiProject> listProjects() {
-        return new ApiItemsResponse<>(workspaceService.listProjects());
-    }
-
-    @GetMapping("/projects/{projectId}")
-    public ApiProject getProject(@PathVariable String projectId) {
-        return workspaceService.findProject(projectId)
-                .orElseThrow(() -> notFound(projectId));
-    }
-
-    @PostMapping("/projects")
-    @ResponseStatus(HttpStatus.CREATED)
-    public ApiProject createProject(@Valid @RequestBody CreateProjectRequest request) {
-        return workspaceService.createProject(request);
-    }
-
-    @DeleteMapping("/projects/{projectId}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteProject(@PathVariable String projectId) {
-        boolean removed = workspaceService.deleteProject(projectId);
-        if (!removed) {
-            throw notFound(projectId);
-        }
     }
 
     @GetMapping("/projects/{projectId}/classes")
@@ -123,7 +94,7 @@ public class WorkspaceApiController {
             javax.swing.JFileChooser chooser = new javax.swing.JFileChooser();
             chooser.setFileSelectionMode(javax.swing.JFileChooser.DIRECTORIES_ONLY);
             chooser.setDialogTitle("Selecionar Pasta do Projeto");
-            
+
             int returnVal = chooser.showOpenDialog(null);
             if (returnVal == javax.swing.JFileChooser.APPROVE_OPTION) {
                 response.put("path", chooser.getSelectedFile().getAbsolutePath());
@@ -144,7 +115,7 @@ public class WorkspaceApiController {
             javax.swing.JFileChooser chooser = new javax.swing.JFileChooser();
             chooser.setFileSelectionMode(javax.swing.JFileChooser.FILES_ONLY);
             chooser.setDialogTitle("Selecionar Arquivo");
-            
+
             int returnVal = chooser.showOpenDialog(null);
             if (returnVal == javax.swing.JFileChooser.APPROVE_OPTION) {
                 response.put("path", chooser.getSelectedFile().getAbsolutePath());
