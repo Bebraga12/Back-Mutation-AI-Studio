@@ -141,7 +141,8 @@ public class RefineGeneratedTestService {
                 prompt.analysis(),
                 prompt.sourceCode(),
                 refinementPrompt,
-                prompt.savedPath()
+                prompt.savedPath(),
+                null
         );
 
         String refinedCode = GeneratedTestSourceNormalizer.normalize(

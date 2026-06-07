@@ -23,7 +23,17 @@ public class ClassTestPromptTest {
 
     @BeforeEach
     public void setUp() {
-        classTestPrompt = new ClassTestPrompt("TestClass", "com.example.TestClass", "src/main/java/com/example/TestClass.java", Collections.emptyList(), null, "public class TestClass {}", "Generate a JUnit 5 + Mockito unit test file for the Java class below.", Path.of("path/to/saved/file"));
+        classTestPrompt = new ClassTestPrompt(
+                "TestClass",
+                "com.example.TestClass",
+                "src/main/java/com/example/TestClass.java",
+                Collections.emptyList(),
+                null,
+                "public class TestClass {}",
+                "Generate a JUnit 5 + Mockito unit test file for the Java class below.",
+                Path.of("path/to/saved/file"),
+                null   // ollamaModel — campo novo, não relevante para este teste
+        );
     }
 
     @Test

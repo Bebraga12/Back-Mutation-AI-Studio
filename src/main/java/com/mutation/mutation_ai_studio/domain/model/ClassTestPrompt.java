@@ -11,6 +11,7 @@ public record ClassTestPrompt(
         ClassAnalysis analysis,
         String sourceCode,
         String prompt,
-        Path savedPath
+        Path savedPath,
+        String ollamaModel   // nullable — null usa o modelo padrão do application.properties
 ) {
 }

@@ -65,7 +65,8 @@ public class CreateTestPromptService implements CreateTestPromptUseCase {
                 analysis,
                 sourceCode,
                 prompt,
-                null
+                null,   // savedPath — preenchido pelo repositório depois
+                null    // ollamaModel — injetado em executeAiTestGeneration ao reconstruir
         );
     }
 

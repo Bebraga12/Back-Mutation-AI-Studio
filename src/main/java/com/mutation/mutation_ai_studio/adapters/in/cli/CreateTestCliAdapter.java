@@ -151,7 +151,8 @@ public class CreateTestCliAdapter implements ApplicationRunner {
                     prompt.analysis(),
                     prompt.sourceCode(),
                     prompt.prompt(),
-                    savedPath
+                    savedPath,
+                    null
             ));
         }
         return savedPrompts;

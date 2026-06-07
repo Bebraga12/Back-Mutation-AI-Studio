@@ -6,6 +6,7 @@ import java.util.List;
 
 public record StartAiTestRunRequest(
         @NotEmpty(message = "classes deve conter ao menos um item")
-        List<String> classes
+        List<String> classes,
+        String ollamaModel   // nullable — omitido pelo frontend = usa o padrão
 ) {
 }
