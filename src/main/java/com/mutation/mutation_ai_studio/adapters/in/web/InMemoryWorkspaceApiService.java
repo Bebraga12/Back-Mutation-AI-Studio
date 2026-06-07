@@ -1,5 +1,6 @@
 package com.mutation.mutation_ai_studio.adapters.in.web;
 
+import com.mutation.mutation_ai_studio.adapters.in.web.project.ProjectCatalogService;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.AiTestClassResult;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.AiTestRunAcceptedResponse;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.AiTestRunStatusResponse;
@@ -28,6 +29,7 @@ import com.mutation.mutation_ai_studio.domain.model.GeneratedTestExecutionResult
 import com.mutation.mutation_ai_studio.domain.model.JavaClassCandidate;
 import com.mutation.mutation_ai_studio.domain.model.SelectionSnapshot;
 import com.mutation.mutation_ai_studio.domain.model.TestPromptBatch;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -38,7 +40,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -70,6 +71,7 @@ public class InMemoryWorkspaceApiService {
     private final ExecuteGeneratedTestBatchUseCase executeGeneratedTestBatchUseCase;
     private final SelectionRepositoryPort selectionRepositoryPort;
     private final TestPromptRepositoryPort testPromptRepositoryPort;
+    private final ProjectCatalogService projectCatalogService;
 
     private final Map<String, WorkspaceState> workspaceByProjectId = new ConcurrentHashMap<>();
     private final Map<String, MutationRunState> mutationRunsByRunId = new ConcurrentHashMap<>();
@@ -84,44 +86,50 @@ public class InMemoryWorkspaceApiService {
                                        GenerateTestFromPromptUseCase generateTestFromPromptUseCase,
                                        ExecuteGeneratedTestBatchUseCase executeGeneratedTestBatchUseCase,
                                        SelectionRepositoryPort selectionRepositoryPort,
-                                       TestPromptRepositoryPort testPromptRepositoryPort) {
+                                       TestPromptRepositoryPort testPromptRepositoryPort,
+                                       ProjectCatalogService projectCatalogService) {
         this.scanProjectUseCase = scanProjectUseCase;
         this.createTestPromptUseCase = createTestPromptUseCase;
         this.generateTestFromPromptUseCase = generateTestFromPromptUseCase;
         this.executeGeneratedTestBatchUseCase = executeGeneratedTestBatchUseCase;
         this.selectionRepositoryPort = selectionRepositoryPort;
         this.testPromptRepositoryPort = testPromptRepositoryPort;
+        this.projectCatalogService = projectCatalogService;
+    }
+
+    @PostConstruct
+    void loadPersistedProjects() {
+        projectCatalogService.listProjects().forEach(this::registerProject);
     }
 
     public List<ApiProject> listProjects() {
-        return workspaceByProjectId.values().stream()
-                .map(WorkspaceState::project)
-                .sorted(Comparator.comparing(ApiProject::name))
-                .toList();
+        return projectCatalogService.listProjects();
     }
 
     public Optional<ApiProject> findProject(String projectId) {
-        return Optional.ofNullable(workspaceByProjectId.get(projectId)).map(WorkspaceState::project);
+        return projectCatalogService.findProject(projectId);
     }
 
     public synchronized ApiProject createProject(CreateProjectRequest request) {
-        String projectName = normalize(request.name());
-        String projectId = buildUniqueProjectId(projectName);
-
-        ApiProject project = new ApiProject(
-                projectId,
-                projectName,
-                normalize(request.repositoryPath()),
-                normalize(request.mavenPath()),
-                0,
-                "Projeto novo");
-
-        workspaceByProjectId.put(projectId, createEmptyState(project));
+        ApiProject project = projectCatalogService.createProject(request);
+        registerProject(project);
         return project;
     }
 
     public synchronized boolean deleteProject(String projectId) {
-        return workspaceByProjectId.remove(projectId) != null;
+        boolean removed = projectCatalogService.deleteProject(projectId);
+        if (removed) {
+            unregisterProject(projectId);
+        }
+        return removed;
+    }
+
+    public synchronized void registerProject(ApiProject project) {
+        workspaceByProjectId.computeIfAbsent(project.id(), ignored -> createEmptyState(project));
+    }
+
+    public synchronized void unregisterProject(String projectId) {
+        workspaceByProjectId.remove(normalize(projectId));
     }
 
     public synchronized MutationRunAcceptedResponse startMutationRun(StartMutationRunRequest request) {
@@ -183,6 +191,7 @@ public class InMemoryWorkspaceApiService {
                 state.gaugeMetrics(),
                 state.insights(),
                 state.diffSnapshot()));
+        projectCatalogService.saveProject(projectWithMaven);
 
         MutationRunState runState = MutationRunState.queued(runId, projectId, mavenBinary.toString(), selectedClasses);
         mutationRunsByRunId.put(runId, runState);
@@ -535,6 +544,7 @@ public class InMemoryWorkspaceApiService {
                 nextGaugeMetrics,
                 nextInsights,
                 nextDiffSnapshot));
+        projectCatalogService.saveProject(updatedProject);
     }
 
     private int resolvePreviousGaugeAfter(List<ApiGaugeMetric> gauges, String id, int fallback) {
@@ -679,23 +689,6 @@ public class InMemoryWorkspaceApiService {
 
     private String normalize(String value) {
         return value == null ? "" : value.trim();
-    }
-
-    private String buildUniqueProjectId(String projectName) {
-        String slug = projectName.toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]+", "-")
-                .replaceAll("(^-+)|(-+$)", "");
-
-        String base = slug.isBlank() ? "project" : slug;
-        String current = base;
-        int counter = 1;
-
-        while (workspaceByProjectId.containsKey(current)) {
-            current = base + "-" + counter;
-            counter++;
-        }
-
-        return current;
     }
 
     private record WorkspaceState(
