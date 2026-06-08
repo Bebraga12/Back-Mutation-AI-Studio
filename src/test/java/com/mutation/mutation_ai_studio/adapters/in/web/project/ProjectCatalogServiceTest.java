@@ -68,6 +68,19 @@ class ProjectCatalogServiceTest {
         String pomContent = Files.readString(repositoryPath.resolve("pom.xml"));
         assertEquals(1, countOccurrences(pomContent, "<artifactId>pitest-maven</artifactId>"));
         assertEquals(1, countOccurrences(pomContent, "<artifactId>pitest-junit5-plugin</artifactId>"));
+        assertTrue(pomContent.contains("<version>1.2.3</version>"));
+    }
+
+    @Test
+    void shouldUpgradeLegacyPitestJunit5PluginVersion() throws Exception {
+        Path repositoryPath = createMavenProjectWithLegacyPitestPlugin("legacy-billing");
+        ProjectCatalogService service = newService();
+
+        service.ensurePitestPluginInstalled(repositoryPath.toString());
+
+        String pomContent = Files.readString(repositoryPath.resolve("pom.xml"));
+        assertTrue(pomContent.contains("<version>1.2.3</version>"));
+        assertFalse(pomContent.contains("<version>1.2.1</version>"));
     }
 
     @Test
@@ -97,6 +110,40 @@ class ProjectCatalogServiceTest {
                         <groupId>com.example</groupId>
                         <artifactId>sample</artifactId>
                         <version>1.0.0</version>
+                    </project>
+                    """);
+            return repositoryPath;
+        } catch (Exception exception) {
+            throw new IllegalStateException(exception);
+        }
+    }
+
+    private Path createMavenProjectWithLegacyPitestPlugin(String directoryName) {
+        try {
+            Path repositoryPath = tempDir.resolve(directoryName);
+            Files.createDirectories(repositoryPath);
+            Files.writeString(repositoryPath.resolve("pom.xml"), """
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>com.example</groupId>
+                        <artifactId>sample</artifactId>
+                        <version>1.0.0</version>
+                        <build>
+                            <plugins>
+                                <plugin>
+                                    <groupId>org.pitest</groupId>
+                                    <artifactId>pitest-maven</artifactId>
+                                    <version>1.17.3</version>
+                                    <dependencies>
+                                        <dependency>
+                                            <groupId>org.pitest</groupId>
+                                            <artifactId>pitest-junit5-plugin</artifactId>
+                                            <version>1.2.1</version>
+                                        </dependency>
+                                    </dependencies>
+                                </plugin>
+                            </plugins>
+                        </build>
                     </project>
                     """);
             return repositoryPath;

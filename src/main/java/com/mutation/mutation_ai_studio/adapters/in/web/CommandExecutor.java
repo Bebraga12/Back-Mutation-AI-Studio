@@ -68,6 +68,27 @@ final class CommandExecutor {
         return "";
     }
 
+    String extractMeaningfulErrorLine(List<String> output) {
+        List<String> priorityFragments = List.of(
+                "Runner local PIT indisponivel",
+                "Operation not permitted",
+                "Coverage generation minion exited abnormally",
+                "PluginExecutionException",
+                "Failed to execute goal",
+                "[ERROR]");
+
+        for (String fragment : priorityFragments) {
+            for (String line : output) {
+                String normalizedLine = normalize(line);
+                if (!normalizedLine.isBlank() && normalizedLine.contains(fragment)) {
+                    return normalizedLine;
+                }
+            }
+        }
+
+        return extractLastNonBlankLine(output);
+    }
+
     private List<String> readOutputLines(Path logFile) {
         if (!Files.exists(logFile)) {
             return List.of();

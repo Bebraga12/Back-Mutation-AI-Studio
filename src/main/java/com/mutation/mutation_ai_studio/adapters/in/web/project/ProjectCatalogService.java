@@ -42,7 +42,7 @@ public class ProjectCatalogService {
         String repositoryPath = normalize(request.repositoryPath());
         String projectId = buildUniqueProjectId(projectName, projects);
 
-        pitestPomPluginInstaller.ensurePluginInstalled(repositoryPath);
+        ensurePitestPluginInstalled(repositoryPath);
 
         ApiProject project = new ApiProject(
                 projectId,
@@ -55,6 +55,10 @@ public class ProjectCatalogService {
         projects.add(project);
         repository.saveProjects(projects);
         return project;
+    }
+
+    public synchronized void ensurePitestPluginInstalled(String repositoryPath) {
+        pitestPomPluginInstaller.ensurePluginInstalled(normalize(repositoryPath));
     }
 
     public synchronized boolean deleteProject(String projectId) {

@@ -42,8 +42,12 @@ public class WorkspaceApiController {
 
     @PostMapping("/projects/{projectId}/detect-maven")
     public ApiMavenDetectionResult detectMaven(@PathVariable String projectId) {
-        return workspaceService.detectMaven(projectId)
-                .orElseThrow(() -> notFound(projectId));
+        try {
+            return workspaceService.detectMaven(projectId)
+                    .orElseThrow(() -> notFound(projectId));
+        } catch (IllegalArgumentException error) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, error.getMessage());
+        }
     }
 
     @GetMapping("/projects/{projectId}/dashboard")

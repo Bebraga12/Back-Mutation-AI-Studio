@@ -1,29 +1,39 @@
 package com.mutation.mutation_ai_studio.adapters.in.web.project;
 
 import org.springframework.stereotype.Service;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.NodeList;
 
-import javax.xml.XMLConstants;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.transform.OutputKeys;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.dom.DOMSource;
-import javax.xml.transform.stream.StreamResult;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 
 @Service
 public class PitestPomPluginInstaller {
 
-    private static final String PITEST_GROUP_ID = "org.pitest";
-    private static final String PITEST_ARTIFACT_ID = "pitest-maven";
     private static final String PITEST_VERSION = "1.17.3";
-    private static final String PITEST_JUNIT5_ARTIFACT_ID = "pitest-junit5-plugin";
-    private static final String PITEST_JUNIT5_VERSION = "1.2.1";
+    private static final String PITEST_JUNIT5_PLUGIN_VERSION = "1.2.3";
+    private static final String LEGACY_PITEST_JUNIT5_PLUGIN_VERSION = "1.2.1";
+
+    private static final String PITEST_PLUGIN_BLOCK = """
+            <plugin>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-maven</artifactId>
+                <version>%s</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.pitest</groupId>
+                        <artifactId>pitest-junit5-plugin</artifactId>
+                        <version>%s</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <outputFormats>
+                        <param>XML</param>
+                        <param>HTML</param>
+                    </outputFormats>
+                </configuration>
+            </plugin>
+            """.formatted(PITEST_VERSION, PITEST_JUNIT5_PLUGIN_VERSION);
 
     public void ensurePluginInstalled(String repositoryPath) {
         Path pomPath = Path.of(repositoryPath).toAbsolutePath().normalize().resolve("pom.xml");
@@ -32,15 +42,18 @@ public class PitestPomPluginInstaller {
         }
 
         try {
-            Document document = parseDocument(pomPath);
-            Element project = document.getDocumentElement();
-            Element build = ensureChild(document, project, "build");
-            Element plugins = ensureChild(document, build, "plugins");
-
-            if (!hasPitestPlugin(plugins)) {
-                plugins.appendChild(createPitestPlugin(document));
-                writeDocument(document, pomPath);
+            String pomContent = Files.readString(pomPath, StandardCharsets.UTF_8);
+            String updatedPomContent = upgradeLegacyJUnit5PluginVersion(pomContent);
+            String normalized = updatedPomContent.toLowerCase(Locale.ROOT);
+            if (normalized.contains("<artifactid>pitest-maven</artifactid>")) {
+                if (!updatedPomContent.equals(pomContent)) {
+                    Files.writeString(pomPath, updatedPomContent, StandardCharsets.UTF_8);
+                }
+                return;
             }
+
+            String updated = injectPlugin(updatedPomContent);
+            Files.writeString(pomPath, updated, StandardCharsets.UTF_8);
         } catch (IllegalArgumentException exception) {
             throw exception;
         } catch (Exception exception) {
@@ -48,93 +61,82 @@ public class PitestPomPluginInstaller {
         }
     }
 
-    private Document parseDocument(Path pomPath) throws Exception {
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        factory.setNamespaceAware(false);
-        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-        factory.setXIncludeAware(false);
-        factory.setExpandEntityReferences(false);
-
-        DocumentBuilder builder = factory.newDocumentBuilder();
-        return builder.parse(pomPath.toFile());
-    }
-
-    private void writeDocument(Document document, Path pomPath) throws Exception {
-        TransformerFactory transformerFactory = TransformerFactory.newInstance();
-        transformerFactory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-
-        Transformer transformer = transformerFactory.newTransformer();
-        transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-        transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "4");
-        transformer.transform(new DOMSource(document), new StreamResult(pomPath.toFile()));
-    }
-
-    private boolean hasPitestPlugin(Element plugins) {
-        NodeList pluginNodes = plugins.getElementsByTagName("plugin");
-        for (int index = 0; index < pluginNodes.getLength(); index++) {
-            Element plugin = (Element) pluginNodes.item(index);
-            String groupId = childText(plugin, "groupId");
-            String artifactId = childText(plugin, "artifactId");
-            if (PITEST_GROUP_ID.equals(groupId) && PITEST_ARTIFACT_ID.equals(artifactId)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private Element createPitestPlugin(Document document) {
-        Element plugin = document.createElement("plugin");
-        plugin.appendChild(createTextElement(document, "groupId", PITEST_GROUP_ID));
-        plugin.appendChild(createTextElement(document, "artifactId", PITEST_ARTIFACT_ID));
-        plugin.appendChild(createTextElement(document, "version", PITEST_VERSION));
-
-        Element dependencies = document.createElement("dependencies");
-        Element dependency = document.createElement("dependency");
-        dependency.appendChild(createTextElement(document, "groupId", PITEST_GROUP_ID));
-        dependency.appendChild(createTextElement(document, "artifactId", PITEST_JUNIT5_ARTIFACT_ID));
-        dependency.appendChild(createTextElement(document, "version", PITEST_JUNIT5_VERSION));
-        dependencies.appendChild(dependency);
-        plugin.appendChild(dependencies);
-
-        Element configuration = document.createElement("configuration");
-        Element outputFormats = document.createElement("outputFormats");
-        outputFormats.appendChild(createTextElement(document, "param", "XML"));
-        outputFormats.appendChild(createTextElement(document, "param", "HTML"));
-        configuration.appendChild(outputFormats);
-        plugin.appendChild(configuration);
-
-        return plugin;
-    }
-
-    private Element ensureChild(Document document, Element parent, String tagName) {
-        NodeList nodes = parent.getElementsByTagName(tagName);
-        for (int index = 0; index < nodes.getLength(); index++) {
-            if (nodes.item(index).getParentNode() == parent) {
-                return (Element) nodes.item(index);
-            }
+    private String upgradeLegacyJUnit5PluginVersion(String pomContent) {
+        String legacyFragment = "<artifactId>pitest-junit5-plugin</artifactId>";
+        if (!pomContent.contains(legacyFragment) || !pomContent.contains(LEGACY_PITEST_JUNIT5_PLUGIN_VERSION)) {
+            return pomContent;
         }
 
-        Element child = document.createElement(tagName);
-        parent.appendChild(child);
-        return child;
+        return pomContent.replace(
+                "<version>" + LEGACY_PITEST_JUNIT5_PLUGIN_VERSION + "</version>",
+                "<version>" + PITEST_JUNIT5_PLUGIN_VERSION + "</version>");
     }
 
-    private Element createTextElement(Document document, String tagName, String value) {
-        Element element = document.createElement(tagName);
-        element.setTextContent(value);
-        return element;
-    }
-
-    private String childText(Element parent, String tagName) {
-        NodeList nodes = parent.getElementsByTagName(tagName);
-        for (int index = 0; index < nodes.getLength(); index++) {
-            if (nodes.item(index).getParentNode() == parent) {
-                return nodes.item(index).getTextContent().trim();
-            }
+    private String injectPlugin(String pomContent) {
+        if (pomContent.contains("</plugins>")) {
+            return pomContent.replace("</plugins>", indentBlock(PITEST_PLUGIN_BLOCK, detectIndentBeforeClosingTag(pomContent, "</plugins>")) + "\n" + detectIndentBeforeClosingTag(pomContent, "</plugins>") + "</plugins>");
         }
-        return "";
+
+        if (pomContent.contains("</build>")) {
+            String indent = detectIndentBeforeClosingTag(pomContent, "</build>");
+            String pluginIndent = indent + "    ";
+            String pluginsBlock = "\n"
+                    + pluginIndent + "<plugins>\n"
+                    + indentBlock(PITEST_PLUGIN_BLOCK, pluginIndent + "    ") + "\n"
+                    + pluginIndent + "</plugins>\n"
+                    + indent;
+            return pomContent.replace("</build>", pluginsBlock + "</build>");
+        }
+
+        if (pomContent.contains("</project>")) {
+            String indent = detectIndentBeforeClosingTag(pomContent, "</project>");
+            String buildIndent = indent + "    ";
+            String pluginsIndent = buildIndent + "    ";
+            String buildBlock = "\n"
+                    + buildIndent + "<build>\n"
+                    + pluginsIndent + "<plugins>\n"
+                    + indentBlock(PITEST_PLUGIN_BLOCK, pluginsIndent + "    ") + "\n"
+                    + pluginsIndent + "</plugins>\n"
+                    + buildIndent + "</build>\n"
+                    + indent;
+            return pomContent.replace("</project>", buildBlock + "</project>");
+        }
+
+        throw new IllegalArgumentException("pom.xml invalido: tag </project> nao encontrada.");
+    }
+
+    private String detectIndentBeforeClosingTag(String content, String closingTag) {
+        int closingIndex = content.indexOf(closingTag);
+        if (closingIndex <= 0) {
+            return "";
+        }
+
+        int lineStart = content.lastIndexOf('\n', closingIndex);
+        if (lineStart < 0) {
+            return "";
+        }
+
+        StringBuilder indent = new StringBuilder();
+        for (int index = lineStart + 1; index < closingIndex; index++) {
+            char current = content.charAt(index);
+            if (current == ' ' || current == '\t') {
+                indent.append(current);
+                continue;
+            }
+            break;
+        }
+        return indent.toString();
+    }
+
+    private String indentBlock(String block, String indent) {
+        String[] lines = block.strip().split("\n");
+        StringBuilder builder = new StringBuilder();
+        for (int index = 0; index < lines.length; index++) {
+            if (index > 0) {
+                builder.append('\n');
+            }
+            builder.append(indent).append(lines[index]);
+        }
+        return builder.toString();
     }
 }
