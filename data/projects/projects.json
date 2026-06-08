@@ -2,7 +2,14 @@
   "id" : "aaa",
   "name" : "aaa",
   "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/Spring-livros",
-  "mavenPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/Spring-livros/mvnw",
+  "mavenPath" : "",
+  "lastMutationScore" : 0,
+  "updatedAt" : "Projeto novo"
+}, {
+  "id" : "bbb",
+  "name" : "bbb",
+  "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/Spring-livros",
+  "mavenPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/Spring-livros/mvnw",
   "lastMutationScore" : 0,
   "updatedAt" : "Execucao com falha"
 } ]

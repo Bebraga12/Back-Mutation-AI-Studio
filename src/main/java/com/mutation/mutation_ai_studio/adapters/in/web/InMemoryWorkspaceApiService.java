@@ -420,9 +420,17 @@ public class InMemoryWorkspaceApiService {
 
         CommandExecutionResult execution;
         try {
-            execution = pitConfigured
-                    ? executePitWithRunner(repositoryRoot, runState.mavenPath(), runState.classes())
-                    : commandExecutor.execute(repositoryRoot, command);
+            if (pitConfigured) {
+                CommandExecutionResult preflight = executeTestPreflight(repositoryRoot, runState.mavenPath());
+                if (preflight.exitCode() != 0 || preflight.timedOut()) {
+                    runState.markFailed("Suite base de testes falhou antes do PIT.", preflight);
+                    updateWorkspaceAfterRun(workspaceState.project().id(), workspaceState, preflight, Optional.empty(), true);
+                    return;
+                }
+                execution = executePitWithRunner(repositoryRoot, runState.mavenPath(), runState.classes());
+            } else {
+                execution = commandExecutor.execute(repositoryRoot, command);
+            }
         } catch (InterruptedException interruptedException) {
             Thread.currentThread().interrupt();
             runState.markFailed("Execucao interrompida.", null);
@@ -434,7 +442,7 @@ public class InMemoryWorkspaceApiService {
 
         if (execution.timedOut()) {
             runState.markFailed("Tempo limite excedido apos " + RUN_TIMEOUT_MINUTES + " minutos.", execution);
-            updateWorkspaceAfterRun(workspaceState.project().id(), workspaceState, execution, Optional.empty(), false);
+            updateWorkspaceAfterRun(workspaceState.project().id(), workspaceState, execution, Optional.empty(), pitConfigured);
             return;
         }
 
@@ -444,7 +452,7 @@ public class InMemoryWorkspaceApiService {
                     ? "Execucao Maven finalizou com erro (exit code " + execution.exitCode() + ")."
                     : "Execucao Maven falhou: " + errorLine;
             runState.markFailed(message, execution);
-            updateWorkspaceAfterRun(workspaceState.project().id(), workspaceState, execution, Optional.empty(), false);
+            updateWorkspaceAfterRun(workspaceState.project().id(), workspaceState, execution, Optional.empty(), pitConfigured);
             return;
         }
 
@@ -559,7 +567,10 @@ public class InMemoryWorkspaceApiService {
             String recommendation;
             String errorLine = commandExecutor.extractMeaningfulErrorLine(execution.outputLines());
             if (!executionSucceeded) {
-                if (errorLine.contains("Runner local PIT indisponivel")) {
+                if (errorLine.contains("Suite base de testes falhou")) {
+                    detail = "A suite base de testes do projeto falhou antes da geracao das metricas de mutacao.";
+                    recommendation = "Corrija os testes quebrados em `mvn test` antes de executar o PIT.";
+                } else if (errorLine.contains("Runner local PIT indisponivel")) {
                     detail = "A execucao PIT falhou porque o runner local nao respondeu ou nao esta em execucao.";
                     recommendation = "Inicie o runner local com `npm run start:pit-runner` antes de detectar o Maven ou executar a rodada.";
                 } else if (errorLine.contains("Operation not permitted")) {
@@ -644,6 +655,24 @@ public class InMemoryWorkspaceApiService {
                 return;
             }
 
+            CommandExecutionResult preflight = executeTestPreflight(repositoryRoot, mavenBinary.toString());
+            if (preflight.exitCode() != 0 || preflight.timedOut()) {
+                WorkspaceState snapshot = new WorkspaceState(
+                        new ApiProject(
+                                state.project().id(),
+                                state.project().name(),
+                                state.project().repositoryPath(),
+                                detectedMavenPath,
+                                state.project().lastMutationScore(),
+                                state.project().updatedAt()),
+                        state.classOptions(),
+                        state.gaugeMetrics(),
+                        state.insights(),
+                        state.diffSnapshot());
+                updateWorkspaceAfterRun(projectId, snapshot, preflight, Optional.empty(), true);
+                return;
+            }
+
             CommandExecutionResult execution = executePitWithRunner(repositoryRoot, mavenBinary.toString(), List.of());
             Optional<PitestMetrics> pitMetrics = pitestReportLoader.loadLatestMetrics(repositoryRoot);
 
@@ -702,7 +731,9 @@ public class InMemoryWorkspaceApiService {
         String detail;
         if (execution.exitCode() != 0 || execution.timedOut()) {
             String errorLine = commandExecutor.extractMeaningfulErrorLine(execution.outputLines());
-            if (errorLine.contains("Runner local PIT indisponivel")) {
+            if (errorLine.contains("Suite base de testes falhou")) {
+                detail = "Falha Maven: a suite base de testes falhou antes do PIT.";
+            } else if (errorLine.contains("Runner local PIT indisponivel")) {
                 detail = "Falha Maven: runner local PIT indisponivel. Inicie `npm run start:pit-runner`.";
             } else if (errorLine.contains("Operation not permitted")) {
                 detail = "Falha Maven: o PIT nao conseguiu abrir o socket interno do minion de cobertura neste ambiente.";
@@ -834,6 +865,10 @@ public class InMemoryWorkspaceApiService {
         return List.copyOf(preview);
     }
 
+    private List<String> buildTestRunnerPreview(String mavenPath) {
+        return List.of("pit-runner", pitRunnerClient.baseUrl() + "/run-tests", mavenPath);
+    }
+
     private CommandExecutionResult executePitWithRunner(Path repositoryRoot, String mavenPath, List<String> selectedClasses) {
         try {
             return pitRunnerClient.executePit(repositoryRoot, mavenPath, selectedClasses);
@@ -844,6 +879,19 @@ public class InMemoryWorkspaceApiService {
                     false,
                     0,
                     List.of("Runner local PIT indisponivel: " + normalize(exception.getMessage())));
+        }
+    }
+
+    private CommandExecutionResult executeTestPreflight(Path repositoryRoot, String mavenPath) {
+        try {
+            return pitRunnerClient.executeTests(repositoryRoot, mavenPath);
+        } catch (Exception exception) {
+            return new CommandExecutionResult(
+                    buildTestRunnerPreview(mavenPath),
+                    1,
+                    false,
+                    0,
+                    List.of("Suite base de testes falhou: runner local indisponivel - " + normalize(exception.getMessage())));
         }
     }
 

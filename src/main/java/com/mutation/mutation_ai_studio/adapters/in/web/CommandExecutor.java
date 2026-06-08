@@ -70,6 +70,7 @@ final class CommandExecutor {
 
     String extractMeaningfulErrorLine(List<String> output) {
         List<String> priorityFragments = List.of(
+                "Suite base de testes falhou",
                 "Runner local PIT indisponivel",
                 "Operation not permitted",
                 "Coverage generation minion exited abnormally",

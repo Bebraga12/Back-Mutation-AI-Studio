@@ -33,14 +33,24 @@ public class PitRunnerClient {
     }
 
     CommandExecutionResult executePit(Path repositoryRoot, String mavenPath, List<String> targetClasses) throws Exception {
-        PitRunnerRequest payload = new PitRunnerRequest(
+        return execute(repositoryRoot, "/run-pit", new PitRunnerRequest(
                 repositoryRoot.toString(),
                 mavenPath,
                 targetClasses == null ? List.of() : List.copyOf(targetClasses),
-                List.of());
+                List.of()));
+    }
 
+    CommandExecutionResult executeTests(Path repositoryRoot, String mavenPath) throws Exception {
+        return execute(repositoryRoot, "/run-tests", new PitRunnerRequest(
+                repositoryRoot.toString(),
+                mavenPath,
+                List.of(),
+                List.of()));
+    }
+
+    private CommandExecutionResult execute(Path repositoryRoot, String route, PitRunnerRequest payload) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/run-pit"))
+                .uri(URI.create(baseUrl + route))
                 .timeout(Duration.ofMinutes(timeoutMinutes))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
