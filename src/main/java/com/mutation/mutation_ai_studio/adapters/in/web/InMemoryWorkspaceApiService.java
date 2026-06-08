@@ -309,10 +309,62 @@ public class InMemoryWorkspaceApiService {
 
             long passed = results.stream().filter(AiTestClassResult::passed).count();
             String summary = passed + "/" + results.size() + " testes aprovados pelo compilador e executor.";
+
+            if (passed > 0) {
+                String pitSummary = refreshPitMetricsAfterAiGeneration(runState, projectRoot);
+                if (!pitSummary.isBlank()) {
+                    summary = summary + " " + pitSummary;
+                }
+            }
+
             runState.markCompleted(summary, results);
 
         } catch (Exception ex) {
             runState.markFailed("Falha na geracao: " + normalize(ex.getMessage()));
+        }
+    }
+
+    private String refreshPitMetricsAfterAiGeneration(AiTestRunState runState, Path projectRoot) {
+        WorkspaceState workspaceState = workspaceByProjectId.get(runState.projectId());
+        if (workspaceState == null) {
+            return "";
+        }
+
+        String mavenPath = normalize(workspaceState.project().mavenPath());
+        if (mavenPath.isBlank()) {
+            return "Maven nao detectado; baseline PIT nao foi atualizado.";
+        }
+
+        try {
+            Path repositoryRoot = projectRoot.toAbsolutePath().normalize();
+            projectCatalogService.ensurePitestPluginInstalled(repositoryRoot.toString());
+
+            Path mavenBinary = Paths.get(mavenPath).toAbsolutePath().normalize();
+            if (!Files.exists(mavenBinary) || !Files.isRegularFile(mavenBinary)) {
+                return "Caminho Maven invalido; baseline PIT nao foi atualizado.";
+            }
+
+            runState.markRunning("Validando suite completa antes de atualizar o baseline PIT...");
+            CommandExecutionResult preflight = executeTestPreflight(repositoryRoot, mavenBinary.toString());
+            if (preflight.exitCode() != 0 || preflight.timedOut()) {
+                updateWorkspaceAfterRun(workspaceState.project().id(), workspaceState, preflight, Optional.empty(), true);
+                return "PIT nao atualizado porque a suite completa falhou no preflight.";
+            }
+
+            runState.markRunning("Gerando metricas PIT com os testes aprovados...");
+            CommandExecutionResult execution = executePitWithRunner(repositoryRoot, mavenBinary.toString(), List.of());
+            Optional<PitestMetrics> pitMetrics = pitestReportLoader.loadLatestMetrics(repositoryRoot);
+            updateWorkspaceAfterRun(workspaceState.project().id(), workspaceState, execution, pitMetrics, true);
+
+            if (pitMetrics.isPresent()) {
+                return "Mutation Score atualizado para " + pitMetrics.get().mutationScore() + "%.";
+            }
+
+            return execution.exitCode() == 0
+                    ? "PIT executado, mas o relatorio nao foi encontrado."
+                    : "PIT nao conseguiu atualizar o relatorio.";
+        } catch (Exception exception) {
+            return "Falha ao atualizar baseline PIT: " + normalize(exception.getMessage()) + ".";
         }
     }
 
@@ -638,11 +690,10 @@ public class InMemoryWorkspaceApiService {
                 detectedMavenPath,
                 state.project().lastMutationScore(),
                 state.project().updatedAt()));
-
+        WorkspaceState baselineState = restoredState.gaugeMetrics().isEmpty() ? state : restoredState;
         if (!restoredState.gaugeMetrics().isEmpty()) {
             workspaceByProjectId.put(projectId, restoredState);
             projectCatalogService.saveProject(restoredState.project());
-            return;
         }
 
         if (!pitestReportLoader.hasPitestPlugin(repositoryRoot)) {
@@ -655,44 +706,43 @@ public class InMemoryWorkspaceApiService {
                 return;
             }
 
+            WorkspaceState executionState = baselineState.gaugeMetrics().isEmpty()
+                    ? resetDashboardStateForFreshDetection(state, detectedMavenPath)
+                    : baselineState;
+
+            workspaceByProjectId.put(projectId, executionState);
+            projectCatalogService.saveProject(executionState.project());
+
             CommandExecutionResult preflight = executeTestPreflight(repositoryRoot, mavenBinary.toString());
             if (preflight.exitCode() != 0 || preflight.timedOut()) {
-                WorkspaceState snapshot = new WorkspaceState(
-                        new ApiProject(
-                                state.project().id(),
-                                state.project().name(),
-                                state.project().repositoryPath(),
-                                detectedMavenPath,
-                                state.project().lastMutationScore(),
-                                state.project().updatedAt()),
-                        state.classOptions(),
-                        state.gaugeMetrics(),
-                        state.insights(),
-                        state.diffSnapshot());
-                updateWorkspaceAfterRun(projectId, snapshot, preflight, Optional.empty(), true);
+                updateWorkspaceAfterRun(projectId, executionState, preflight, Optional.empty(), true);
                 return;
             }
 
             CommandExecutionResult execution = executePitWithRunner(repositoryRoot, mavenBinary.toString(), List.of());
             Optional<PitestMetrics> pitMetrics = pitestReportLoader.loadLatestMetrics(repositoryRoot);
 
-            WorkspaceState snapshot = new WorkspaceState(
-                    new ApiProject(
-                            state.project().id(),
-                            state.project().name(),
-                            state.project().repositoryPath(),
-                            detectedMavenPath,
-                            state.project().lastMutationScore(),
-                            state.project().updatedAt()),
-                    state.classOptions(),
-                    state.gaugeMetrics(),
-                    state.insights(),
-                    state.diffSnapshot());
-
-            updateWorkspaceAfterRun(projectId, snapshot, execution, pitMetrics, true);
+            updateWorkspaceAfterRun(projectId, executionState, execution, pitMetrics, true);
         } catch (Exception ignored) {
             // Baseline oportunista; falha nao deve quebrar deteccao do Maven.
         }
+    }
+
+    private WorkspaceState resetDashboardStateForFreshDetection(WorkspaceState state, String detectedMavenPath) {
+        ApiProject project = new ApiProject(
+                state.project().id(),
+                state.project().name(),
+                state.project().repositoryPath(),
+                detectedMavenPath,
+                0,
+                "Aguardando baseline PIT");
+
+        return new WorkspaceState(
+                project,
+                state.classOptions(),
+                List.of(),
+                List.of(),
+                EMPTY_DIFF_SNAPSHOT);
     }
 
     private int resolvePreviousGaugeAfter(List<ApiGaugeMetric> gauges, String id, int fallback) {
