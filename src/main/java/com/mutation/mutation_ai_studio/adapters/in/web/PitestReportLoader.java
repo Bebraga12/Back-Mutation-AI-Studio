@@ -76,6 +76,7 @@ final class PitestReportLoader {
             }
 
             int killed = 0;
+            int survived = 0;
             int noCoverage = 0;
 
             for (int index = 0; index < mutationNodes.getLength(); index++) {
@@ -85,20 +86,18 @@ final class PitestReportLoader {
                 }
 
                 String status = normalize(element.getAttribute("status")).toUpperCase(Locale.ROOT);
-                if ("KILLED".equals(status)) {
-                    killed++;
-                    continue;
-                }
-
-                if ("NO_COVERAGE".equals(status)) {
-                    noCoverage++;
+                switch (status) {
+                    case "KILLED" -> killed++;
+                    case "SURVIVED" -> survived++;
+                    case "NO_COVERAGE" -> noCoverage++;
+                    default -> { /* TIMED_OUT, RUN_ERROR etc. ignorados na contagem */ }
                 }
             }
 
-            int survivorCount = Math.max(0, total - killed);
-            int mutationScore = Math.round((killed * 100f) / total);
-            int survivorRate = Math.round((survivorCount * 100f) / total);
-            int killedRate = Math.round((killed * 100f) / total);
+            int survivorCount = survived;
+            int mutationScore = total > 0 ? Math.round((killed * 100f) / total) : 0;
+            int survivorRate = total > 0 ? Math.round((survivorCount * 100f) / total) : 0;
+            int killedRate = total > 0 ? Math.round((killed * 100f) / total) : 0;
 
             return Optional.of(new PitestMetrics(
                     mutationScore,

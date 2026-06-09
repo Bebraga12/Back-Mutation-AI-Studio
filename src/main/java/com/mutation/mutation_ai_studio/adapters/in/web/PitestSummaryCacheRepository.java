@@ -31,7 +31,7 @@ public class PitestSummaryCacheRepository {
         }
     }
 
-    public void save(Path projectRoot, PitestMetrics metrics) {
+    public void save(Path projectRoot, PitestMetrics metrics, long durationMs) {
         Path summaryFile = projectRoot.resolve(SUMMARY_PATH);
         try {
             Files.createDirectories(summaryFile.getParent());
@@ -45,6 +45,32 @@ public class PitestSummaryCacheRepository {
                             metrics.survivorRate(),
                             metrics.killedRate(),
                             metrics.reportFile(),
+                            durationMs,
+                            java.time.Instant.now().toString()));
+        } catch (Exception ignored) {
+            // Cache auxiliar; falha nao deve bloquear fluxo principal.
+        }
+    }
+
+    public void updateDuration(Path projectRoot, long durationMs) {
+        Path summaryFile = projectRoot.resolve(SUMMARY_PATH);
+        if (!Files.exists(summaryFile) || !Files.isRegularFile(summaryFile)) {
+            return;
+        }
+
+        try {
+            PitestSummaryCache existing = objectMapper.readValue(summaryFile.toFile(), PitestSummaryCache.class);
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(summaryFile.toFile(),
+                    new PitestSummaryCache(
+                            existing.mutationScore(),
+                            existing.totalMutants(),
+                            existing.killedMutants(),
+                            existing.survivingMutants(),
+                            existing.noCoverageMutants(),
+                            existing.survivorRate(),
+                            existing.killedRate(),
+                            existing.reportFile(),
+                            durationMs,
                             java.time.Instant.now().toString()));
         } catch (Exception ignored) {
             // Cache auxiliar; falha nao deve bloquear fluxo principal.

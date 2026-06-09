@@ -5,6 +5,7 @@ import java.util.List;
 public record ApiDashboardData(
         List<ApiGaugeMetric> gaugeMetrics,
         List<ApiInsightFeedback> insights,
-        ApiDiffSnapshot diffSnapshot
+        ApiDiffSnapshot diffSnapshot,
+        Long durationMs
 ) {
 }

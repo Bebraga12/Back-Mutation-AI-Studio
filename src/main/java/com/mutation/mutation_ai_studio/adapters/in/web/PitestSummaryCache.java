@@ -9,6 +9,7 @@ record PitestSummaryCache(
         int survivorRate,
         int killedRate,
         String reportFile,
+        Long durationMs,
         String updatedAt
 ) {
 }

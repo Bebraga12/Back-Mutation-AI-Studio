@@ -1,22 +1,15 @@
 [ {
-  "id" : "gerando-dados",
-  "name" : "gerando dados",
+  "id" : "testes-com-dados",
+  "name" : "testes com dados",
   "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/Spring-livros",
-  "mavenPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/Spring-livros/mvnw",
-  "lastMutationScore" : 10,
-  "updatedAt" : "Relatorio PIT carregado"
+  "mavenPath" : "",
+  "lastMutationScore" : 0,
+  "updatedAt" : "Projeto novo"
 }, {
-  "id" : "copia-do-pom",
-  "name" : "copia do pom",
+  "id" : "livros",
+  "name" : "Livros",
   "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/Spring-livros",
   "mavenPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/Spring-livros/mvnw",
-  "lastMutationScore" : 7,
-  "updatedAt" : "Atualizado agora"
-}, {
-  "id" : "teste",
-  "name" : "teste",
-  "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/Spring-livros",
-  "mavenPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/Spring-livros/mvnw",
-  "lastMutationScore" : 6,
+  "lastMutationScore" : 37,
   "updatedAt" : "Atualizado agora"
 } ]

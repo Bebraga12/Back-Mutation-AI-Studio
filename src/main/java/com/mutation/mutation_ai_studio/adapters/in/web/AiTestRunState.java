@@ -65,11 +65,7 @@ final class AiTestRunState {
 
     synchronized AiTestRunStatusResponse toResponse() {
         long passed = results.stream().filter(AiTestClassResult::passed).count();
-        Long durationMs = null;
-        if (startedAt != null) {
-            Instant end = finishedAt != null ? finishedAt : Instant.now();
-            durationMs = Duration.between(startedAt, end).toMillis();
-        }
+        Long durationMs = currentDurationMs();
         return new AiTestRunStatusResponse(
                 runId,
                 projectId,
@@ -83,5 +79,14 @@ final class AiTestRunState {
                 (int) (results.size() - passed),
                 results
         );
+    }
+
+    synchronized Long currentDurationMs() {
+        if (startedAt == null) {
+            return null;
+        }
+
+        Instant end = finishedAt != null ? finishedAt : Instant.now();
+        return Duration.between(startedAt, end).toMillis();
     }
 }

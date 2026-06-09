@@ -73,6 +73,7 @@ public class InMemoryWorkspaceApiService {
     private final TestPromptRepositoryPort testPromptRepositoryPort;
     private final ProjectCatalogService projectCatalogService;
     private final PitestSummaryCacheRepository pitestSummaryCacheRepository;
+    private final DashboardStateCacheRepository dashboardStateCacheRepository;
     private final PitRunnerClient pitRunnerClient;
 
     private final Map<String, WorkspaceState> workspaceByProjectId = new ConcurrentHashMap<>();
@@ -91,6 +92,7 @@ public class InMemoryWorkspaceApiService {
                                        TestPromptRepositoryPort testPromptRepositoryPort,
                                        ProjectCatalogService projectCatalogService,
                                        PitestSummaryCacheRepository pitestSummaryCacheRepository,
+                                       DashboardStateCacheRepository dashboardStateCacheRepository,
                                        PitRunnerClient pitRunnerClient) {
         this.scanProjectUseCase = scanProjectUseCase;
         this.createTestPromptUseCase = createTestPromptUseCase;
@@ -100,6 +102,7 @@ public class InMemoryWorkspaceApiService {
         this.testPromptRepositoryPort = testPromptRepositoryPort;
         this.projectCatalogService = projectCatalogService;
         this.pitestSummaryCacheRepository = pitestSummaryCacheRepository;
+        this.dashboardStateCacheRepository = dashboardStateCacheRepository;
         this.pitRunnerClient = pitRunnerClient;
     }
 
@@ -318,10 +321,20 @@ public class InMemoryWorkspaceApiService {
             }
 
             runState.markCompleted(summary, results);
+            persistAiGenerationDuration(projectRoot, runState);
 
         } catch (Exception ex) {
             runState.markFailed("Falha na geracao: " + normalize(ex.getMessage()));
         }
+    }
+
+    private void persistAiGenerationDuration(Path projectRoot, AiTestRunState runState) {
+        Long durationMs = runState.currentDurationMs();
+        if (durationMs == null) {
+            return;
+        }
+
+        pitestSummaryCacheRepository.updateDuration(projectRoot.toAbsolutePath().normalize(), durationMs);
     }
 
     private String refreshPitMetricsAfterAiGeneration(AiTestRunState runState, Path projectRoot) {
@@ -345,14 +358,14 @@ public class InMemoryWorkspaceApiService {
             }
 
             runState.markRunning("Validando suite completa antes de atualizar o baseline PIT...");
-            CommandExecutionResult preflight = executeTestPreflight(repositoryRoot, mavenBinary.toString());
+            CommandExecutionResult preflight = executeTestPreflightWithFallback(repositoryRoot, mavenBinary.toString());
             if (preflight.exitCode() != 0 || preflight.timedOut()) {
                 updateWorkspaceAfterRun(workspaceState.project().id(), workspaceState, preflight, Optional.empty(), true);
                 return "PIT nao atualizado porque a suite completa falhou no preflight.";
             }
 
             runState.markRunning("Gerando metricas PIT com os testes aprovados...");
-            CommandExecutionResult execution = executePitWithRunner(repositoryRoot, mavenBinary.toString(), List.of());
+            CommandExecutionResult execution = executePitWithFallback(repositoryRoot, mavenBinary.toString(), List.of());
             Optional<PitestMetrics> pitMetrics = pitestReportLoader.loadLatestMetrics(repositoryRoot);
             updateWorkspaceAfterRun(workspaceState.project().id(), workspaceState, execution, pitMetrics, true);
 
@@ -413,7 +426,7 @@ public class InMemoryWorkspaceApiService {
 
                         workspaceByProjectId.put(projectId, updatedState);
                         projectCatalogService.saveProject(projectWithMaven);
-                        hydrateMetricsAfterMavenDetection(projectId, updatedState, result.path());
+                        executor.submit(() -> hydrateMetricsAfterMavenDetection(projectId, updatedState, result.path()));
                     }
                     return result;
                 });
@@ -431,13 +444,16 @@ public class InMemoryWorkspaceApiService {
                     if (state.project().lastMutationScore() <= 0
                             && state.gaugeMetrics().isEmpty()
                             && state.insights().isEmpty()) {
-                        return new ApiDashboardData(List.of(), List.of(), EMPTY_DIFF_SNAPSHOT);
+                        return new ApiDashboardData(List.of(), List.of(), EMPTY_DIFF_SNAPSHOT, null);
                     }
+
+                    Long durationMs = loadPersistedDurationMs(state.project());
 
                     return new ApiDashboardData(
                             state.gaugeMetrics(),
                             state.insights(),
-                            state.diffSnapshot());
+                            state.diffSnapshot(),
+                            durationMs);
                 });
     }
 
@@ -473,13 +489,13 @@ public class InMemoryWorkspaceApiService {
         CommandExecutionResult execution;
         try {
             if (pitConfigured) {
-                CommandExecutionResult preflight = executeTestPreflight(repositoryRoot, runState.mavenPath());
+                CommandExecutionResult preflight = executeTestPreflightWithFallback(repositoryRoot, runState.mavenPath());
                 if (preflight.exitCode() != 0 || preflight.timedOut()) {
                     runState.markFailed("Suite base de testes falhou antes do PIT.", preflight);
                     updateWorkspaceAfterRun(workspaceState.project().id(), workspaceState, preflight, Optional.empty(), true);
                     return;
                 }
-                execution = executePitWithRunner(repositoryRoot, runState.mavenPath(), runState.classes());
+                execution = executePitWithFallback(repositoryRoot, runState.mavenPath(), runState.classes());
             } else {
                 execution = commandExecutor.execute(repositoryRoot, command);
             }
@@ -544,40 +560,41 @@ public class InMemoryWorkspaceApiService {
         if (pitMetrics.isPresent()) {
             PitestMetrics metrics = pitMetrics.get();
             nextScore = metrics.mutationScore();
+            boolean hasPreviousMetrics = !currentState.gaugeMetrics().isEmpty();
 
-            int previousSurvivorRate = resolvePreviousGaugeAfter(
-                    currentState.gaugeMetrics(),
-                    "survivor-pressure",
-                    100 - previousScore);
-            int currentSurvivorRate = metrics.survivorRate();
-            int previousKilledRate = resolvePreviousGaugeAfter(
-                    currentState.gaugeMetrics(),
-                    "killed-pressure",
-                    100 - previousSurvivorRate);
-            int currentKilledRate = metrics.killedRate();
+            int currentCoverageRate = metrics.total() > 0
+                    ? Math.round(((metrics.total() - metrics.noCoverage()) * 100f) / metrics.total()) : 0;
+            int coveredMutants = metrics.total() - metrics.noCoverage();
+            int currentSurvivorOfCoveredRate = coveredMutants > 0
+                    ? Math.round((metrics.survivorCount() * 100f) / coveredMutants) : 0;
+
+            int previousCoverageRate = resolvePreviousGaugeAfter(
+                    currentState.gaugeMetrics(), "coverage-rate", currentCoverageRate);
+            int previousSurvivorOfCoveredRate = resolvePreviousGaugeAfter(
+                    currentState.gaugeMetrics(), "survivor-of-covered", currentSurvivorOfCoveredRate);
 
             nextGaugeMetrics = List.of(
                     new ApiGaugeMetric(
                             "mutation-score",
                             "Mutation Score",
-                            "Indice real extraido do relatorio PIT",
-                            previousScore,
+                            "Percentual de mutantes eliminados pelo total gerado",
+                            hasPreviousMetrics ? previousScore : nextScore,
                             nextScore,
                             "emerald"),
                     new ApiGaugeMetric(
-                            "survivor-pressure",
-                            "Mutantes sobreviventes",
-                            "Percentual de mutantes ainda vivos",
-                            previousSurvivorRate,
-                            currentSurvivorRate,
-                            "amber"),
+                            "coverage-rate",
+                            "Cobertura de mutacao",
+                            "Mutantes cobertos por pelo menos um teste",
+                            hasPreviousMetrics ? previousCoverageRate : currentCoverageRate,
+                            currentCoverageRate,
+                            "soft-blue"),
                     new ApiGaugeMetric(
-                            "killed-pressure",
-                            "Mutantes eliminados",
-                            "Percentual de mutantes mortos",
-                            previousKilledRate,
-                            currentKilledRate,
-                            "soft-blue"));
+                            "survivor-of-covered",
+                            "Sobreviventes cobertos",
+                            "Dos cobertos, percentual que os testes nao detectaram",
+                            hasPreviousMetrics ? previousSurvivorOfCoveredRate : currentSurvivorOfCoveredRate,
+                            currentSurvivorOfCoveredRate,
+                            "amber"));
 
             String recommendation;
             if (metrics.total() == 0) {
@@ -612,19 +629,25 @@ public class InMemoryWorkspaceApiService {
                             recommendation,
                             metrics.total() == 0 ? "soft-blue" : (metrics.survivorCount() > 0 ? "amber" : "emerald")));
 
-            nextDiffSnapshot = buildPitDiffSnapshot(metrics);
+            int beforeScore = hasPreviousMetrics ? previousScore : nextScore;
+            int beforeCoverage = hasPreviousMetrics ? previousCoverageRate : currentCoverageRate;
+            int beforeSurvivorOfCovered = hasPreviousMetrics ? previousSurvivorOfCoveredRate : currentSurvivorOfCoveredRate;
+            nextDiffSnapshot = buildPitDiffSnapshot(
+                    metrics,
+                    beforeScore, beforeCoverage, beforeSurvivorOfCovered,
+                    currentCoverageRate, currentSurvivorOfCoveredRate);
         } else {
             boolean executionSucceeded = execution.exitCode() == 0 && !execution.timedOut();
             String detail;
             String recommendation;
             String errorLine = commandExecutor.extractMeaningfulErrorLine(execution.outputLines());
             if (!executionSucceeded) {
-                if (errorLine.contains("Suite base de testes falhou")) {
-                    detail = "A suite base de testes do projeto falhou antes da geracao das metricas de mutacao.";
-                    recommendation = "Corrija os testes quebrados em `mvn test` antes de executar o PIT.";
-                } else if (errorLine.contains("Runner local PIT indisponivel")) {
+                if (errorLine.contains("Runner local PIT indisponivel") || errorLine.contains("runner local indisponivel")) {
                     detail = "A execucao PIT falhou porque o runner local nao respondeu ou nao esta em execucao.";
                     recommendation = "Inicie o runner local com `npm run start:pit-runner` antes de detectar o Maven ou executar a rodada.";
+                } else if (errorLine.contains("Suite base de testes falhou")) {
+                    detail = "A suite base de testes do projeto falhou antes da geracao das metricas de mutacao.";
+                    recommendation = "Corrija os testes quebrados em `mvn test` antes de executar o PIT.";
                 } else if (errorLine.contains("Operation not permitted")) {
                     detail = "A execucao PIT falhou porque o ambiente bloqueou a abertura do socket interno usado pelo minion de cobertura.";
                     recommendation = "Execute o backend em um ambiente sem essa restricao de socket local para permitir a geracao do relatorio PIT.";
@@ -673,9 +696,16 @@ public class InMemoryWorkspaceApiService {
                 nextDiffSnapshot));
         projectCatalogService.saveProject(updatedProject);
 
+        Path repositoryRoot = Paths.get(normalize(updatedProject.repositoryPath())).toAbsolutePath().normalize();
+        dashboardStateCacheRepository.save(repositoryRoot, new DashboardStateCache(
+                nextGaugeMetrics,
+                nextInsights,
+                nextDiffSnapshot,
+                execution.durationMs(),
+                java.time.Instant.now().toString()));
+
         pitMetrics.ifPresent(metrics -> {
-            Path repositoryRoot = Paths.get(normalize(updatedProject.repositoryPath())).toAbsolutePath().normalize();
-            pitestSummaryCacheRepository.save(repositoryRoot, metrics);
+            pitestSummaryCacheRepository.save(repositoryRoot, metrics, execution.durationMs());
         });
     }
 
@@ -713,13 +743,13 @@ public class InMemoryWorkspaceApiService {
             workspaceByProjectId.put(projectId, executionState);
             projectCatalogService.saveProject(executionState.project());
 
-            CommandExecutionResult preflight = executeTestPreflight(repositoryRoot, mavenBinary.toString());
+            CommandExecutionResult preflight = executeTestPreflightWithFallback(repositoryRoot, mavenBinary.toString());
             if (preflight.exitCode() != 0 || preflight.timedOut()) {
                 updateWorkspaceAfterRun(projectId, executionState, preflight, Optional.empty(), true);
                 return;
             }
 
-            CommandExecutionResult execution = executePitWithRunner(repositoryRoot, mavenBinary.toString(), List.of());
+            CommandExecutionResult execution = executePitWithFallback(repositoryRoot, mavenBinary.toString(), List.of());
             Optional<PitestMetrics> pitMetrics = pitestReportLoader.loadLatestMetrics(repositoryRoot);
 
             updateWorkspaceAfterRun(projectId, executionState, execution, pitMetrics, true);
@@ -753,25 +783,50 @@ public class InMemoryWorkspaceApiService {
                 .orElse(fallback);
     }
 
-    private ApiDiffSnapshot buildPitDiffSnapshot(PitestMetrics metrics) {
+    private ApiDiffSnapshot buildPitDiffSnapshot(
+            PitestMetrics metrics,
+            int prevScore, int prevCoverage, int prevSurvivorOfCovered,
+            int currentCoverage, int currentSurvivorOfCovered) {
+
         List<ApiDiffLine> beforeLines = List.of(
-                new ApiDiffLine(1, "Mutation score anterior: sem dados consolidados", "context"),
-                new ApiDiffLine(2, "Mutantes sem cobertura: n/d", "removed"),
-                new ApiDiffLine(3, "Mutantes sobreviventes: n/d", "removed"));
+                new ApiDiffLine(1, "Mutation Score:          " + prevScore + "%", "context"),
+                new ApiDiffLine(2, "Cobertura de mutacao:    " + prevCoverage + "%", "context"),
+                new ApiDiffLine(3, "Sobreviventes cobertos:  " + prevSurvivorOfCovered + "%", "context"),
+                new ApiDiffLine(4, "Mutantes eliminados:     " + "n/d", "context"),
+                new ApiDiffLine(5, "Mutantes sobreviventes:  " + "n/d", "context"),
+                new ApiDiffLine(6, "Sem cobertura:           " + "n/d", "context"));
 
         List<ApiDiffLine> afterLines = List.of(
-                new ApiDiffLine(1, "Mutation score atual: " + metrics.mutationScore() + "%", "context"),
-                new ApiDiffLine(2, "Mutantes sem cobertura: " + metrics.noCoverage(),
-                        metrics.noCoverage() > 0 ? "added" : "context"),
-                new ApiDiffLine(3, "Mutantes sobreviventes: " + metrics.survivorCount(),
-                        metrics.survivorCount() > 0 ? "added" : "context"),
-                new ApiDiffLine(4, "Mutantes eliminados: " + metrics.killed(), "added"));
+                new ApiDiffLine(1, "Mutation Score:          " + metrics.mutationScore() + "%",
+                        kindForHigherIsBetter(prevScore, metrics.mutationScore())),
+                new ApiDiffLine(2, "Cobertura de mutacao:    " + currentCoverage + "%",
+                        kindForHigherIsBetter(prevCoverage, currentCoverage)),
+                new ApiDiffLine(3, "Sobreviventes cobertos:  " + currentSurvivorOfCovered + "%",
+                        kindForLowerIsBetter(prevSurvivorOfCovered, currentSurvivorOfCovered)),
+                new ApiDiffLine(4, "Mutantes eliminados:     " + metrics.killed(),
+                        metrics.killed() > 0 ? "added" : "context"),
+                new ApiDiffLine(5, "Mutantes sobreviventes:  " + metrics.survivorCount(),
+                        metrics.survivorCount() > 0 ? "removed" : "added"),
+                new ApiDiffLine(6, "Sem cobertura:           " + metrics.noCoverage(),
+                        metrics.noCoverage() > 0 ? "removed" : "added"));
 
         return new ApiDiffSnapshot(
-                "Antes - baseline da rodada",
+                "Antes - rodada anterior",
                 "Depois - resultado PIT",
                 beforeLines,
                 afterLines);
+    }
+
+    private String kindForHigherIsBetter(int before, int after) {
+        if (after > before) return "added";
+        if (after < before) return "removed";
+        return "context";
+    }
+
+    private String kindForLowerIsBetter(int before, int after) {
+        if (after < before) return "added";
+        if (after > before) return "removed";
+        return "context";
     }
 
     private ApiDiffSnapshot buildNoMetricsDiffSnapshot(CommandExecutionResult execution, boolean pitConfigured) {
@@ -781,10 +836,10 @@ public class InMemoryWorkspaceApiService {
         String detail;
         if (execution.exitCode() != 0 || execution.timedOut()) {
             String errorLine = commandExecutor.extractMeaningfulErrorLine(execution.outputLines());
-            if (errorLine.contains("Suite base de testes falhou")) {
-                detail = "Falha Maven: a suite base de testes falhou antes do PIT.";
-            } else if (errorLine.contains("Runner local PIT indisponivel")) {
+            if (errorLine.contains("Runner local PIT indisponivel") || errorLine.contains("runner local indisponivel")) {
                 detail = "Falha Maven: runner local PIT indisponivel. Inicie `npm run start:pit-runner`.";
+            } else if (errorLine.contains("Suite base de testes falhou")) {
+                detail = "Falha Maven: a suite base de testes falhou antes do PIT.";
             } else if (errorLine.contains("Operation not permitted")) {
                 detail = "Falha Maven: o PIT nao conseguiu abrir o socket interno do minion de cobertura neste ambiente.";
             } else if (errorLine.contains("Coverage generation minion exited abnormally")) {
@@ -945,6 +1000,28 @@ public class InMemoryWorkspaceApiService {
         }
     }
 
+    private CommandExecutionResult executePitWithFallback(Path repositoryRoot, String mavenPath, List<String> selectedClasses) throws Exception {
+        CommandExecutionResult result = executePitWithRunner(repositoryRoot, mavenPath, selectedClasses);
+        if (result.exitCode() != 0 && isPitRunnerUnavailable(result)) {
+            return commandExecutor.execute(repositoryRoot, buildRunCommand(mavenPath, selectedClasses, true));
+        }
+        return result;
+    }
+
+    private CommandExecutionResult executeTestPreflightWithFallback(Path repositoryRoot, String mavenPath) throws Exception {
+        CommandExecutionResult result = executeTestPreflight(repositoryRoot, mavenPath);
+        if (result.exitCode() != 0 && isPitRunnerUnavailable(result)) {
+            return commandExecutor.execute(repositoryRoot, buildRunCommand(mavenPath, List.of(), false));
+        }
+        return result;
+    }
+
+    private boolean isPitRunnerUnavailable(CommandExecutionResult result) {
+        return result.outputLines().stream()
+                .anyMatch(line -> line.contains("runner local indisponivel")
+                        || line.contains("Runner local PIT indisponivel"));
+    }
+
     private WorkspaceState createEmptyState(ApiProject project) {
         return new WorkspaceState(
                 project,
@@ -961,77 +1038,11 @@ public class InMemoryWorkspaceApiService {
         }
 
         Path repositoryRoot = Paths.get(repositoryPath).toAbsolutePath().normalize();
-        Optional<PitestSummaryCache> cachedSummary = pitestSummaryCacheRepository.load(repositoryRoot);
-        if (cachedSummary.isPresent()) {
-            return workspaceStateFromSummary(project, cachedSummary.get());
+        Optional<DashboardStateCache> cachedDashboardState = dashboardStateCacheRepository.load(repositoryRoot);
+        if (cachedDashboardState.isPresent()) {
+            return workspaceStateFromDashboardState(project, cachedDashboardState.get());
         }
-
-        Optional<PitestMetrics> pitMetrics = pitestReportLoader.loadLatestMetrics(repositoryRoot);
-        if (pitMetrics.isEmpty()) {
-            return createEmptyState(project);
-        }
-
-        PitestMetrics metrics = pitMetrics.get();
-        int mutationScore = metrics.mutationScore();
-        int survivorRate = metrics.survivorRate();
-        int killedRate = metrics.killedRate();
-
-        ApiProject hydratedProject = new ApiProject(
-                project.id(),
-                project.name(),
-                project.repositoryPath(),
-                project.mavenPath(),
-                mutationScore,
-                "Relatorio PIT carregado");
-
-        List<ApiGaugeMetric> gaugeMetrics = List.of(
-                new ApiGaugeMetric(
-                        "mutation-score",
-                        "Mutation Score",
-                        "Indice real extraido do relatorio PIT",
-                        mutationScore,
-                        mutationScore,
-                        "emerald"),
-                new ApiGaugeMetric(
-                        "survivor-pressure",
-                        "Mutantes sobreviventes",
-                        "Percentual de mutantes ainda vivos",
-                        survivorRate,
-                        survivorRate,
-                        "amber"),
-                new ApiGaugeMetric(
-                        "killed-pressure",
-                        "Mutantes eliminados",
-                        "Percentual de mutantes mortos",
-                        killedRate,
-                        killedRate,
-                        "soft-blue"));
-
-        List<ApiInsightFeedback> insights = List.of(
-                new ApiInsightFeedback(
-                        "Relatorio PIT carregado",
-                        "Total de mutantes: " + metrics.total()
-                                + " | Mortos: " + metrics.killed()
-                                + " | Sobreviventes: " + metrics.survivorCount()
-                                + " | Sem cobertura: " + metrics.noCoverage() + ".",
-                        "Arquivo analisado: " + metrics.reportFile(),
-                        "soft-blue"),
-                new ApiInsightFeedback(
-                        metrics.survivorCount() > 0 ? "Ainda existem sobreviventes" : "Nenhum sobrevivente no ultimo relatorio",
-                        metrics.survivorCount() > 0
-                                ? "O ultimo relatorio PIT detectou mutantes ainda vivos."
-                                : "Todos os mutantes do ultimo relatorio foram eliminados.",
-                        metrics.survivorCount() > 0
-                                ? "Use esse baseline para comparar com a proxima rodada."
-                                : "A proxima rodada pode focar em novas classes para ampliar a cobertura.",
-                        metrics.survivorCount() > 0 ? "amber" : "emerald"));
-
-        return new WorkspaceState(
-                hydratedProject,
-                List.of(),
-                gaugeMetrics,
-                insights,
-                buildPitDiffSnapshot(metrics));
+        return createEmptyState(project);
     }
 
     private WorkspaceState workspaceStateFromSummary(ApiProject project, PitestSummaryCache summary) {
@@ -1043,28 +1054,34 @@ public class InMemoryWorkspaceApiService {
                 summary.mutationScore(),
                 "Resumo PIT carregado");
 
+        int coverageRate = summary.totalMutants() > 0
+                ? Math.round(((summary.totalMutants() - summary.noCoverageMutants()) * 100f) / summary.totalMutants()) : 0;
+        int coveredMutants = summary.totalMutants() - summary.noCoverageMutants();
+        int survivorOfCoveredRate = coveredMutants > 0
+                ? Math.round((summary.survivingMutants() * 100f) / coveredMutants) : 0;
+
         List<ApiGaugeMetric> gaugeMetrics = List.of(
                 new ApiGaugeMetric(
                         "mutation-score",
                         "Mutation Score",
-                        "Indice real extraido do relatorio PIT",
+                        "Percentual de mutantes eliminados pelo total gerado",
                         summary.mutationScore(),
                         summary.mutationScore(),
                         "emerald"),
                 new ApiGaugeMetric(
-                        "survivor-pressure",
-                        "Mutantes sobreviventes",
-                        "Percentual de mutantes ainda vivos",
-                        summary.survivorRate(),
-                        summary.survivorRate(),
-                        "amber"),
+                        "coverage-rate",
+                        "Cobertura de mutacao",
+                        "Mutantes cobertos por pelo menos um teste",
+                        coverageRate,
+                        coverageRate,
+                        "soft-blue"),
                 new ApiGaugeMetric(
-                        "killed-pressure",
-                        "Mutantes eliminados",
-                        "Percentual de mutantes mortos",
-                        summary.killedRate(),
-                        summary.killedRate(),
-                        "soft-blue"));
+                        "survivor-of-covered",
+                        "Sobreviventes cobertos",
+                        "Dos cobertos, percentual que os testes nao detectaram",
+                        survivorOfCoveredRate,
+                        survivorOfCoveredRate,
+                        "amber"));
 
         List<ApiInsightFeedback> insights = List.of(
                 new ApiInsightFeedback(
@@ -1091,7 +1108,44 @@ public class InMemoryWorkspaceApiService {
                 List.of(),
                 gaugeMetrics,
                 insights,
-                buildPitDiffSnapshot(metrics));
+                EMPTY_DIFF_SNAPSHOT);
+    }
+
+    private WorkspaceState workspaceStateFromDashboardState(ApiProject project, DashboardStateCache state) {
+        int mutationScore = state.gaugeMetrics().stream()
+                .filter(metric -> "mutation-score".equals(metric.id()))
+                .mapToInt(ApiGaugeMetric::after)
+                .findFirst()
+                .orElse(project.lastMutationScore());
+
+        ApiProject hydratedProject = new ApiProject(
+                project.id(),
+                project.name(),
+                project.repositoryPath(),
+                project.mavenPath(),
+                mutationScore,
+                "Snapshot do dashboard carregado");
+
+        return new WorkspaceState(
+                hydratedProject,
+                List.of(),
+                state.gaugeMetrics(),
+                state.insights(),
+                state.diffSnapshot());
+    }
+
+    private Long loadPersistedDurationMs(ApiProject project) {
+        String repositoryPath = normalize(project.repositoryPath());
+        if (repositoryPath.isBlank()) {
+            return null;
+        }
+
+        Path repositoryRoot = Paths.get(repositoryPath).toAbsolutePath().normalize();
+        Optional<DashboardStateCache> dashboardState = dashboardStateCacheRepository.load(repositoryRoot);
+        if (dashboardState.isPresent()) {
+            return dashboardState.get().durationMs();
+        }
+        return null;
     }
 
     private String normalize(String value) {
