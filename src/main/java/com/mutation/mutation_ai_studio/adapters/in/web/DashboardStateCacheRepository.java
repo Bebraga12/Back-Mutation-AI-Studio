@@ -47,4 +47,24 @@ public class DashboardStateCacheRepository {
             // Cache auxiliar; falha nao deve bloquear fluxo principal.
         }
     }
+
+    public void updateDuration(Path projectRoot, long durationMs) {
+        Path stateFile = projectRoot.resolve(DASHBOARD_STATE_PATH);
+        if (!Files.exists(stateFile) || !Files.isRegularFile(stateFile)) {
+            return;
+        }
+
+        try {
+            DashboardStateCache existing = objectMapper.readValue(stateFile.toFile(), DashboardStateCache.class);
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(stateFile.toFile(),
+                    new DashboardStateCache(
+                            existing.gaugeMetrics(),
+                            existing.insights(),
+                            existing.diffSnapshot(),
+                            durationMs,
+                            Instant.now().toString()));
+        } catch (Exception ignored) {
+            // Cache auxiliar; falha nao deve bloquear fluxo principal.
+        }
+    }
 }

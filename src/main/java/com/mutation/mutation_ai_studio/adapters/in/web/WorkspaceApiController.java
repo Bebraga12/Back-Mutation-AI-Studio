@@ -10,12 +10,14 @@ import com.mutation.mutation_ai_studio.adapters.in.web.dto.MutationRunAcceptedRe
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.MutationRunStatusResponse;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.StartAiTestRunRequest;
 import com.mutation.mutation_ai_studio.adapters.in.web.dto.StartMutationRunRequest;
+import com.mutation.mutation_ai_studio.adapters.out.process.OllamaModelConfig;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -28,9 +30,27 @@ import org.springframework.web.server.ResponseStatusException;
 public class WorkspaceApiController {
 
     private final InMemoryWorkspaceApiService workspaceService;
+    private final OllamaModelConfig ollamaModelConfig;
 
-    public WorkspaceApiController(InMemoryWorkspaceApiService workspaceService) {
+    public WorkspaceApiController(InMemoryWorkspaceApiService workspaceService, OllamaModelConfig ollamaModelConfig) {
         this.workspaceService = workspaceService;
+        this.ollamaModelConfig = ollamaModelConfig;
+    }
+
+    @GetMapping("/config/ai-model")
+    public java.util.Map<String, String> getAiModel() {
+        return java.util.Map.of("model", ollamaModelConfig.getModel());
+    }
+
+    @PutMapping("/config/ai-model")
+    public java.util.Map<String, String> setAiModel(@RequestBody java.util.Map<String, String> body) {
+        String model = body.get("model");
+        try {
+            ollamaModelConfig.setModel(model);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+        return java.util.Map.of("model", ollamaModelConfig.getModel());
     }
 
     @GetMapping("/projects/{projectId}/classes")

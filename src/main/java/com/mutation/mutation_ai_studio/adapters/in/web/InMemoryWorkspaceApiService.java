@@ -334,7 +334,9 @@ public class InMemoryWorkspaceApiService {
             return;
         }
 
-        pitestSummaryCacheRepository.updateDuration(projectRoot.toAbsolutePath().normalize(), durationMs);
+        Path repositoryRoot = projectRoot.toAbsolutePath().normalize();
+        pitestSummaryCacheRepository.updateDuration(repositoryRoot, durationMs);
+        dashboardStateCacheRepository.updateDuration(repositoryRoot, durationMs);
     }
 
     private String refreshPitMetricsAfterAiGeneration(AiTestRunState runState, Path projectRoot) {
