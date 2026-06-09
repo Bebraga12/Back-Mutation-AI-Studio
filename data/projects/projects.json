@@ -1,8 +1,15 @@
 [ {
-  "id" : "livros",
-  "name" : "livros",
-  "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/projetos-testes/Spring-livros",
+  "id" : "testes-com-dados",
+  "name" : "testes com dados",
+  "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/Spring-livros",
   "mavenPath" : "",
   "lastMutationScore" : 0,
   "updatedAt" : "Projeto novo"
+}, {
+  "id" : "livros",
+  "name" : "Livros",
+  "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/Spring-livros",
+  "mavenPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/Spring-livros/mvnw",
+  "lastMutationScore" : 37,
+  "updatedAt" : "Atualizado agora"
 } ]

@@ -17,14 +17,31 @@ import java.util.Locale;
 public class MavenTestExecutorAdapter implements TestExecutorPort {
 
     @Override
-    public TestExecutionFeedback execute(Path projectRoot, String testClassName) {
-        ProcessBuilder processBuilder = new ProcessBuilder(
+    public TestExecutionFeedback compile(Path projectRoot, String testClassName) {
+        return run(projectRoot, List.of(
                 "./mvnw",
                 "-Dtest=" + testClassName,
                 "-Djacoco.skip=true",
+                "-DskipTests",
+                "-Dstyle.color=never",
                 "compile",
+                "test-compile"
+        ));
+    }
+
+    @Override
+    public TestExecutionFeedback execute(Path projectRoot, String testClassName) {
+        return run(projectRoot, List.of(
+                "./mvnw",
+                "-Dtest=" + testClassName,
+                "-Djacoco.skip=true",
+                "-Dstyle.color=never",
                 "test"
-        );
+        ));
+    }
+
+    private TestExecutionFeedback run(Path projectRoot, List<String> command) {
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
         processBuilder.directory(projectRoot.toFile());
         processBuilder.redirectErrorStream(true);
 

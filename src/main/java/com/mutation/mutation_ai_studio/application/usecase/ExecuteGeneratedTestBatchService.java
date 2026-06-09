@@ -24,15 +24,18 @@ public class ExecuteGeneratedTestBatchService implements ExecuteGeneratedTestBat
     private final TestExecutorPort testExecutorPort;
     private final RefineGeneratedTestService refineGeneratedTestService;
     private final GeneratedTestRepositoryPort generatedTestRepository;
+    private final GeneratedTestStructuralValidator structuralValidator;
 
     public ExecuteGeneratedTestBatchService(TestWorkspacePort testWorkspacePort,
                                             TestExecutorPort testExecutorPort,
                                             RefineGeneratedTestService refineGeneratedTestService,
-                                            GeneratedTestRepositoryPort generatedTestRepository) {
+                                            GeneratedTestRepositoryPort generatedTestRepository,
+                                            GeneratedTestStructuralValidator structuralValidator) {
         this.testWorkspacePort = testWorkspacePort;
         this.testExecutorPort = testExecutorPort;
         this.refineGeneratedTestService = refineGeneratedTestService;
         this.generatedTestRepository = generatedTestRepository;
+        this.structuralValidator = structuralValidator;
     }
 
     @Override
@@ -44,11 +47,24 @@ public class ExecuteGeneratedTestBatchService implements ExecuteGeneratedTestBat
             Path lastWorkspacePath = null;
 
             for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+                List<String> structuralErrors = structuralValidator.validate(candidate);
+                if (!structuralErrors.isEmpty()) {
+                    feedback = new TestExecutionFeedback(false, -1, structuralErrors, "");
+                    if (attempt < MAX_ATTEMPTS) {
+                        candidate = refineGeneratedTestService.refine(candidate.prompt(), candidate, feedback);
+                        continue;
+                    }
+                    break;
+                }
+
                 Path workspacePath = testWorkspacePort.writeCandidate(projectRoot, candidate);
                 lastWorkspacePath = workspacePath;
 
                 try {
-                    feedback = testExecutorPort.execute(projectRoot, candidate.testClassName());
+                    feedback = testExecutorPort.compile(projectRoot, candidate.testClassName());
+                    if (feedback.passed()) {
+                        feedback = testExecutorPort.execute(projectRoot, candidate.testClassName());
+                    }
                 } catch (RuntimeException e) {
                     testWorkspacePort.cleanup(workspacePath);
                     throw e;

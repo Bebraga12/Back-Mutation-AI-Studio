@@ -46,9 +46,13 @@ public class ProjectCatalogController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiProject createProject(@Valid @RequestBody CreateProjectRequest request) {
-        ApiProject createdProject = projectCatalogService.createProject(request);
-        workspaceService.registerProject(createdProject);
-        return createdProject;
+        try {
+            ApiProject createdProject = projectCatalogService.createProject(request);
+            workspaceService.registerProject(createdProject);
+            return createdProject;
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage());
+        }
     }
 
     @DeleteMapping("/{projectId}")

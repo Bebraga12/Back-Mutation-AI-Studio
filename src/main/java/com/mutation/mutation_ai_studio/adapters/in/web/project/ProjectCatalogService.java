@@ -14,9 +14,13 @@ import java.util.Optional;
 public class ProjectCatalogService {
 
     private final ProjectCatalogFileRepository repository;
+    private final PitestPomPluginInstaller pitestPomPluginInstaller;
 
-    public ProjectCatalogService(ProjectCatalogFileRepository repository) {
+    public ProjectCatalogService(
+            ProjectCatalogFileRepository repository,
+            PitestPomPluginInstaller pitestPomPluginInstaller) {
         this.repository = repository;
+        this.pitestPomPluginInstaller = pitestPomPluginInstaller;
     }
 
     public List<ApiProject> listProjects() {
@@ -35,12 +39,15 @@ public class ProjectCatalogService {
     public synchronized ApiProject createProject(CreateProjectRequest request) {
         List<ApiProject> projects = new ArrayList<>(repository.loadProjects());
         String projectName = normalize(request.name());
+        String repositoryPath = normalize(request.repositoryPath());
         String projectId = buildUniqueProjectId(projectName, projects);
+
+        ensurePitestPluginInstalled(repositoryPath);
 
         ApiProject project = new ApiProject(
                 projectId,
                 projectName,
-                normalize(request.repositoryPath()),
+                repositoryPath,
                 normalize(request.mavenPath()),
                 0,
                 "Projeto novo");
@@ -48,6 +55,10 @@ public class ProjectCatalogService {
         projects.add(project);
         repository.saveProjects(projects);
         return project;
+    }
+
+    public synchronized void ensurePitestPluginInstalled(String repositoryPath) {
+        pitestPomPluginInstaller.ensurePluginInstalled(normalize(repositoryPath));
     }
 
     public synchronized boolean deleteProject(String projectId) {

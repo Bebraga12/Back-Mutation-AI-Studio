@@ -6,5 +6,7 @@ import java.nio.file.Path;
 
 public interface TestExecutorPort {
 
+    TestExecutionFeedback compile(Path projectRoot, String testClassName);
+
     TestExecutionFeedback execute(Path projectRoot, String testClassName);
 }
