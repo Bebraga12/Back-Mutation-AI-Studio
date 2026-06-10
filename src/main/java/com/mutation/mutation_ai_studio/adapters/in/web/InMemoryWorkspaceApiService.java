@@ -74,6 +74,7 @@ public class InMemoryWorkspaceApiService {
     private final ProjectCatalogService projectCatalogService;
     private final PitestSummaryCacheRepository pitestSummaryCacheRepository;
     private final DashboardStateCacheRepository dashboardStateCacheRepository;
+    private final BaselineMutantsCacheRepository baselineMutantsCacheRepository;
     private final PitRunnerClient pitRunnerClient;
 
     private final Map<String, WorkspaceState> workspaceByProjectId = new ConcurrentHashMap<>();
@@ -93,6 +94,7 @@ public class InMemoryWorkspaceApiService {
                                        ProjectCatalogService projectCatalogService,
                                        PitestSummaryCacheRepository pitestSummaryCacheRepository,
                                        DashboardStateCacheRepository dashboardStateCacheRepository,
+                                       BaselineMutantsCacheRepository baselineMutantsCacheRepository,
                                        PitRunnerClient pitRunnerClient) {
         this.scanProjectUseCase = scanProjectUseCase;
         this.createTestPromptUseCase = createTestPromptUseCase;
@@ -103,6 +105,7 @@ public class InMemoryWorkspaceApiService {
         this.projectCatalogService = projectCatalogService;
         this.pitestSummaryCacheRepository = pitestSummaryCacheRepository;
         this.dashboardStateCacheRepository = dashboardStateCacheRepository;
+        this.baselineMutantsCacheRepository = baselineMutantsCacheRepository;
         this.pitRunnerClient = pitRunnerClient;
     }
 
@@ -199,7 +202,8 @@ public class InMemoryWorkspaceApiService {
                 state.classOptions(),
                 state.gaugeMetrics(),
                 state.insights(),
-                state.diffSnapshot()));
+                state.diffSnapshot(),
+                state.perClassMutantCounts()));
         projectCatalogService.saveProject(projectWithMaven);
 
         MutationRunState runState = MutationRunState.queued(runId, projectId, mavenBinary.toString(), selectedClasses);
@@ -220,7 +224,7 @@ public class InMemoryWorkspaceApiService {
 
     public Optional<List<ApiProjectClass>> findClasses(String projectId) {
         return Optional.ofNullable(workspaceByProjectId.get(projectId))
-                .map(state -> scanClassesFromProject(state.project()));
+                .map(state -> scanClassesFromProject(state.project(), state.perClassMutantCounts()));
     }
 
     public AiTestRunAcceptedResponse startAiTestRun(String projectId, StartAiTestRunRequest request) {
@@ -424,7 +428,8 @@ public class InMemoryWorkspaceApiService {
                                 state.classOptions(),
                                 state.gaugeMetrics(),
                                 state.insights(),
-                                state.diffSnapshot());
+                                state.diffSnapshot(),
+                                state.perClassMutantCounts());
 
                         workspaceByProjectId.put(projectId, updatedState);
                         projectCatalogService.saveProject(projectWithMaven);
@@ -558,11 +563,11 @@ public class InMemoryWorkspaceApiService {
         List<ApiInsightFeedback> nextInsights;
         ApiDiffSnapshot nextDiffSnapshot = currentState.diffSnapshot();
         int nextScore = previousScore;
+        boolean hasPreviousMetrics = !currentState.gaugeMetrics().isEmpty();
 
         if (pitMetrics.isPresent()) {
             PitestMetrics metrics = pitMetrics.get();
             nextScore = metrics.mutationScore();
-            boolean hasPreviousMetrics = !currentState.gaugeMetrics().isEmpty();
 
             int currentCoverageRate = metrics.total() > 0
                     ? Math.round(((metrics.total() - metrics.noCoverage()) * 100f) / metrics.total()) : 0;
@@ -670,16 +675,29 @@ public class InMemoryWorkspaceApiService {
                 recommendation = "Configure o plugin PIT no pom.xml para preencher Mutation Score, metricas e diff automaticamente.";
             }
 
-            nextInsights = List.of(
-                    new ApiInsightFeedback(
-                            executionSucceeded
-                                    ? "Execucao concluida sem metricas de mutacao"
-                                    : "Execucao com falha",
-                            detail,
-                            recommendation,
-                            executionSucceeded ? "amber" : "soft-blue"));
+            ApiInsightFeedback failureInsight = new ApiInsightFeedback(
+                    executionSucceeded
+                            ? "Execucao concluida sem metricas de mutacao"
+                            : "Execucao com falha",
+                    detail,
+                    recommendation,
+                    executionSucceeded ? "amber" : "soft-blue");
 
-            nextDiffSnapshot = buildNoMetricsDiffSnapshot(execution, pitConfigured);
+            if (hasPreviousMetrics) {
+                List<ApiInsightFeedback> previousInsights = currentState.insights().stream()
+                        .filter(insight -> !"Execucao com falha".equals(insight.title())
+                                && !"Execucao concluida sem metricas de mutacao".equals(insight.title()))
+                        .toList();
+
+                List<ApiInsightFeedback> combined = new ArrayList<>();
+                combined.add(failureInsight);
+                combined.addAll(previousInsights);
+                nextInsights = List.copyOf(combined);
+                nextDiffSnapshot = currentState.diffSnapshot();
+            } else {
+                nextInsights = List.of(failureInsight);
+                nextDiffSnapshot = buildNoMetricsDiffSnapshot(execution, pitConfigured);
+            }
         }
 
         ApiProject updatedProject = new ApiProject(
@@ -690,15 +708,26 @@ public class InMemoryWorkspaceApiService {
                 nextScore,
                 execution.exitCode() == 0 ? "Atualizado agora" : "Execucao com falha");
 
+        Path repositoryRoot = Paths.get(normalize(updatedProject.repositoryPath())).toAbsolutePath().normalize();
+
+        Map<String, Integer> nextPerClassMutantCounts = currentState.perClassMutantCounts();
+        if (pitMetrics.isPresent()) {
+            Map<String, Integer> freshPerClassMutantCounts = pitestReportLoader.loadPerClassMutantCounts(repositoryRoot);
+            if (!freshPerClassMutantCounts.isEmpty()) {
+                nextPerClassMutantCounts = freshPerClassMutantCounts;
+                baselineMutantsCacheRepository.save(repositoryRoot, freshPerClassMutantCounts);
+            }
+        }
+
         workspaceByProjectId.put(projectId, new WorkspaceState(
                 updatedProject,
                 currentState.classOptions(),
                 nextGaugeMetrics,
                 nextInsights,
-                nextDiffSnapshot));
+                nextDiffSnapshot,
+                nextPerClassMutantCounts));
         projectCatalogService.saveProject(updatedProject);
 
-        Path repositoryRoot = Paths.get(normalize(updatedProject.repositoryPath())).toAbsolutePath().normalize();
         dashboardStateCacheRepository.save(repositoryRoot, new DashboardStateCache(
                 nextGaugeMetrics,
                 nextInsights,
@@ -774,7 +803,8 @@ public class InMemoryWorkspaceApiService {
                 state.classOptions(),
                 List.of(),
                 List.of(),
-                EMPTY_DIFF_SNAPSHOT);
+                EMPTY_DIFF_SNAPSHOT,
+                state.perClassMutantCounts());
     }
 
     private int resolvePreviousGaugeAfter(List<ApiGaugeMetric> gauges, String id, int fallback) {
@@ -866,7 +896,7 @@ public class InMemoryWorkspaceApiService {
                         new ApiDiffLine(2, detail, "added")));
     }
 
-    private List<ApiProjectClass> scanClassesFromProject(ApiProject project) {
+    private List<ApiProjectClass> scanClassesFromProject(ApiProject project, Map<String, Integer> perClassMutantCounts) {
         String repositoryPath = normalize(project.repositoryPath());
         if (repositoryPath.isBlank()) {
             return List.of();
@@ -877,15 +907,19 @@ public class InMemoryWorkspaceApiService {
             return candidates.stream()
                     .map(candidate -> {
                         ClassCost cost = classifyCost(candidate);
+                        String fullyQualifiedName = normalize(candidate.fullyQualifiedName()).isBlank()
+                                ? candidate.className()
+                                : candidate.fullyQualifiedName();
+                        Integer realMutantCount = perClassMutantCounts.get(fullyQualifiedName);
+                        boolean mutantsAreReal = realMutantCount != null;
                         return new ApiProjectClass(
-                                normalize(candidate.fullyQualifiedName()).isBlank()
-                                        ? candidate.className()
-                                        : candidate.fullyQualifiedName(),
+                                fullyQualifiedName,
                                 normalize(candidate.packageName()),
                                 cost.label,
                                 cost.tone,
-                                cost.estimatedMutants,
-                                false);
+                                mutantsAreReal ? realMutantCount : cost.estimatedMutants,
+                                false,
+                                mutantsAreReal);
                     })
                     .toList();
         } catch (Exception ignored) {
@@ -1030,7 +1064,8 @@ public class InMemoryWorkspaceApiService {
                 List.of(),
                 List.of(),
                 List.of(),
-                EMPTY_DIFF_SNAPSHOT);
+                EMPTY_DIFF_SNAPSHOT,
+                Map.of());
     }
 
     private WorkspaceState restoreWorkspaceState(ApiProject project) {
@@ -1040,11 +1075,18 @@ public class InMemoryWorkspaceApiService {
         }
 
         Path repositoryRoot = Paths.get(repositoryPath).toAbsolutePath().normalize();
+        Map<String, Integer> perClassMutantCounts = baselineMutantsCacheRepository.load(repositoryRoot);
         Optional<DashboardStateCache> cachedDashboardState = dashboardStateCacheRepository.load(repositoryRoot);
         if (cachedDashboardState.isPresent()) {
-            return workspaceStateFromDashboardState(project, cachedDashboardState.get());
+            return workspaceStateFromDashboardState(project, cachedDashboardState.get(), perClassMutantCounts);
         }
-        return createEmptyState(project);
+        return new WorkspaceState(
+                project,
+                List.of(),
+                List.of(),
+                List.of(),
+                EMPTY_DIFF_SNAPSHOT,
+                perClassMutantCounts);
     }
 
     private WorkspaceState workspaceStateFromSummary(ApiProject project, PitestSummaryCache summary) {
@@ -1110,10 +1152,11 @@ public class InMemoryWorkspaceApiService {
                 List.of(),
                 gaugeMetrics,
                 insights,
-                EMPTY_DIFF_SNAPSHOT);
+                EMPTY_DIFF_SNAPSHOT,
+                Map.of());
     }
 
-    private WorkspaceState workspaceStateFromDashboardState(ApiProject project, DashboardStateCache state) {
+    private WorkspaceState workspaceStateFromDashboardState(ApiProject project, DashboardStateCache state, Map<String, Integer> perClassMutantCounts) {
         int mutationScore = state.gaugeMetrics().stream()
                 .filter(metric -> "mutation-score".equals(metric.id()))
                 .mapToInt(ApiGaugeMetric::after)
@@ -1133,7 +1176,8 @@ public class InMemoryWorkspaceApiService {
                 List.of(),
                 state.gaugeMetrics(),
                 state.insights(),
-                state.diffSnapshot());
+                state.diffSnapshot(),
+                perClassMutantCounts);
     }
 
     private Long loadPersistedDurationMs(ApiProject project) {
@@ -1159,11 +1203,13 @@ public class InMemoryWorkspaceApiService {
             List<ApiProjectClass> classOptions,
             List<ApiGaugeMetric> gaugeMetrics,
             List<ApiInsightFeedback> insights,
-            ApiDiffSnapshot diffSnapshot) {
+            ApiDiffSnapshot diffSnapshot,
+            Map<String, Integer> perClassMutantCounts) {
         private WorkspaceState {
             classOptions = List.copyOf(new ArrayList<>(classOptions));
             gaugeMetrics = List.copyOf(new ArrayList<>(gaugeMetrics));
             insights = List.copyOf(new ArrayList<>(insights));
+            perClassMutantCounts = Map.copyOf(perClassMutantCounts);
         }
     }
 }

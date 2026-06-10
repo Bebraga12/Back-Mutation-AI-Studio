@@ -6,6 +6,7 @@ public record ApiProjectClass(
         String statusLabel,
         String statusTone,
         int estimatedMutants,
-        boolean preselected
+        boolean preselected,
+        boolean mutantsAreReal
 ) {
 }

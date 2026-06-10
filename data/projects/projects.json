@@ -6,10 +6,59 @@
   "lastMutationScore" : 0,
   "updatedAt" : "Projeto novo"
 }, {
+  "id" : "spring-livros-virgem",
+  "name" : "Spring-livros-virgem",
+  "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem-novo",
+  "mavenPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem-novo/mvnw",
+  "lastMutationScore" : 52,
+  "updatedAt" : "Atualizado agora"
+}, {
+  "id" : "spring-livros-fresh-verify",
+  "name" : "Spring-livros-fresh-verify",
+  "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/Spring-livros-verify",
+  "mavenPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/Spring-livros-verify/mvnw",
+  "lastMutationScore" : 12,
+  "updatedAt" : "Atualizado agora"
+}, {
+  "id" : "sdad",
+  "name" : "sdad",
+  "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/v2/Spring-livros",
+  "mavenPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/v2/Spring-livros/mvnw",
+  "lastMutationScore" : 0,
+  "updatedAt" : "Execucao com falha"
+}, {
   "id" : "livros",
   "name" : "Livros",
   "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/Spring-livros",
   "mavenPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/Spring-livros/mvnw",
   "lastMutationScore" : 37,
+  "updatedAt" : "Execucao com falha"
+}, {
+  "id" : "teste1",
+  "name" : "teste1",
+  "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/testes/Spring-livros",
+  "mavenPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/testes/Spring-livros/mvnw",
+  "lastMutationScore" : 0,
+  "updatedAt" : "Execucao com falha"
+}, {
+  "id" : "v3",
+  "name" : "v3",
+  "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/v3/Spring-livros",
+  "mavenPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/v3/Spring-livros/mvnw",
+  "lastMutationScore" : 10,
+  "updatedAt" : "Atualizado agora"
+}, {
+  "id" : "v4",
+  "name" : "v4",
+  "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/v4/Spring-livros",
+  "mavenPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/v4/Spring-livros/mvnw",
+  "lastMutationScore" : 10,
+  "updatedAt" : "Atualizado agora"
+}, {
+  "id" : "v5",
+  "name" : "v5",
+  "repositoryPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/v5/Spring-livros",
+  "mavenPath" : "/home/braga/Documentos/Faculdade/TCC/novo-clone/crud-virgem/v5/Spring-livros/mvnw",
+  "lastMutationScore" : 17,
   "updatedAt" : "Atualizado agora"
 } ]

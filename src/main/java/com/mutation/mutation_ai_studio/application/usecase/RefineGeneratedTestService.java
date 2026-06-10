@@ -97,6 +97,13 @@ public class RefineGeneratedTestService {
                 .anyMatch(error -> error.toLowerCase().contains("incompatible types"));
         boolean hasWrongHandlerType = hasIncompatibleTypes && feedback.errors().stream()
                 .anyMatch(error -> error.toLowerCase().contains("constraintviolation") || error.toLowerCase().contains("methodargumentnotvalid"));
+        // "incompatible types: Optional<X> cannot be converted to X" (or vice versa) — the AI
+        // wrapped/unwrapped a collaborator's return value in Optional when the method body's
+        // local variable type says otherwise (e.g. `Livro x = service.findByIdLivro(id)` returns
+        // Livro, not Optional<Livro>, but the test stubbed thenReturn(Optional.of(livro))).
+        boolean hasOptionalTypeMismatch = hasIncompatibleTypes && !hasWrongHandlerType
+                && feedback.errors().stream()
+                        .anyMatch(error -> error.contains("Optional<") && error.toLowerCase().contains("cannot be converted"));
         // Extract entity class name from "Optional<com.example.Entity> is not applicable" errors
         String wrongReturnEntityHint = feedback.errors().stream()
                 .filter(e -> e.contains("thenReturn") && e.contains("Optional<"))
@@ -128,7 +135,7 @@ public class RefineGeneratedTestService {
                         hasConstraintViolationNpe, hasWrongMethodSignature,
                         hasWrongReturnTypeStub, hasCannotFindSetter, hasBindingResultNpe,
                         wrongReturnEntityHint, hasUnstubbbedMockToString, hasJwtKeyAccess,
-                        hasWrongHandlerType) + System.lineSeparator()
+                        hasWrongHandlerType, hasOptionalTypeMismatch) + System.lineSeparator()
                 + System.lineSeparator()
                 + "Teste anterior:" + System.lineSeparator()
                 + previousCandidate.sourceCode();
@@ -167,7 +174,8 @@ public class RefineGeneratedTestService {
                                         boolean hasWrongMethodSignature, boolean hasWrongReturnTypeStub,
                                         boolean hasCannotFindSetter, boolean hasBindingResultNpe,
                                         String wrongReturnEntityHint, boolean hasUnstubbbedMockToString,
-                                        boolean hasJwtKeyAccess, boolean hasWrongHandlerType) {
+                                        boolean hasJwtKeyAccess, boolean hasWrongHandlerType,
+                                        boolean hasOptionalTypeMismatch) {
         if (hasWrongTarget) {
             return "Orientações obrigatórias para corrigir o alvo do teste:" + System.lineSeparator()
                     + "- gere teste exclusivamente para a classe alvo " + prompt.className() + System.lineSeparator()
@@ -194,6 +202,19 @@ public class RefineGeneratedTestService {
                     + "    ResponseEntity<?> r = subject.handle02(cve);  // cve, NOT mave" + System.lineSeparator()
                     + "- Also: FieldError constructor is (String objectName, String field, String defaultMessage) — all Strings." + System.lineSeparator()
                     + "  Do NOT pass a ConstraintViolation object as any FieldError constructor argument.";
+        }
+
+        if (hasOptionalTypeMismatch) {
+            return "The test stubbed thenReturn() with the WRONG Optional-vs-plain-type wrapping — incompatible types." + System.lineSeparator()
+                    + "MANDATORY FIXES:" + System.lineSeparator()
+                    + "- Re-read each method body in METHODS TO TEST and find the EXACT line that calls the collaborator." + System.lineSeparator()
+                    + "- The LOCAL VARIABLE TYPE on that line tells you the REAL return type — do not guess from the method name." + System.lineSeparator()
+                    + "- Example: `Livro x = service.findByIdLivro(id);` → findByIdLivro returns `Livro` (NOT Optional<Livro>)." + System.lineSeparator()
+                    + "  CORRECT:   when(service.findByIdLivro(anyLong())).thenReturn(new Livro());  // or thenReturn(null) for the not-found branch" + System.lineSeparator()
+                    + "  WRONG:     when(service.findByIdLivro(anyLong())).thenReturn(Optional.of(new Livro()));" + System.lineSeparator()
+                    + "- Conversely, if the body says `Optional<Livro> x = repo.findById(id);`, then it DOES return Optional<Livro>," + System.lineSeparator()
+                    + "  and you must stub with `Optional.of(...)` / `Optional.empty()`, NOT the bare entity." + System.lineSeparator()
+                    + "- Apply this check to EVERY thenReturn() in the file — fix ALL occurrences of this mistake, not just the one in the error.";
         }
 
         if (hasWrongReturnTypeStub) {

@@ -68,8 +68,12 @@ public class JavaParserSourceCodeAnalyzerAdapter implements SourceCodeAnalyzerPo
                 .map(this::formatField)
                 .toList();
 
+        // Generated tests live in the SAME PACKAGE as the target class, so protected and
+        // package-private methods (e.g. OncePerRequestFilter#doFilterInternal overrides) are
+        // legally callable from `subject.<method>(...)`. Only `private` methods are a real
+        // compile error — those are excluded here and listed in nonPublicMethodNames below.
         List<MethodAnalysis> publicMethods = declaration.getMethods().stream()
-                .filter(MethodDeclaration::isPublic)
+                .filter(m -> !m.isPrivate())
                 .map(this::toMethodAnalysis)
                 .toList();
 
@@ -88,10 +92,11 @@ public class JavaParserSourceCodeAnalyzerAdapter implements SourceCodeAnalyzerPo
         List<String> importedTypes = new ArrayList<>(explicitImports);
         importedTypes.addAll(samePackageTypes);
 
-        // Collect non-public (private/protected/package-private) method names so the prompt
-        // can explicitly warn the AI not to call them from the test.
+        // Collect private method names so the prompt can explicitly warn the AI not to call
+        // them from the test — calling a private method from another class is a compile error
+        // even when the test shares the production class's package.
         List<String> nonPublicMethodNames = declaration.getMethods().stream()
-                .filter(m -> !m.isPublic())
+                .filter(MethodDeclaration::isPrivate)
                 .map(MethodDeclaration::getNameAsString)
                 .distinct()
                 .toList();

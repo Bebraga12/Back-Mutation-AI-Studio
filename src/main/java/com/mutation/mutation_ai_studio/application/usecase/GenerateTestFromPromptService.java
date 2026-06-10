@@ -29,7 +29,17 @@ public class GenerateTestFromPromptService implements GenerateTestFromPromptUseC
     public GeneratedTestBatch generate(Path projectRoot, TestPromptBatch batch) {
         List<GeneratedTestCandidate> candidates = new ArrayList<>();
         for (ClassTestPrompt prompt : batch.prompts()) {
-            String code = aiTestGeneratorPort.generateTestCode(prompt);
+            String code;
+            try {
+                code = aiTestGeneratorPort.generateTestCode(prompt);
+            } catch (RuntimeException ex) {
+                // O modelo local (qwen2.5-coder:7b) pode falhar de forma intermitente
+                // (timeout, resposta vazia, conexao recusada). Um erro pontual aqui nao deve
+                // derrubar o lote inteiro: usamos um teste minimo de fallback para esta classe
+                // e seguimos com as demais. ExecuteGeneratedTestBatchService ainda tentara
+                // refinar/recuperar a partir desse ponto.
+                code = GeneratedTestFallbackFactory.generate(prompt);
+            }
             String sanitizedCode = GeneratedTestSourceNormalizer.normalize(code, prompt);
             GeneratedTestCandidate unsavedCandidate = new GeneratedTestCandidate(
                     prompt,

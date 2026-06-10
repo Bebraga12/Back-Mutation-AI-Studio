@@ -12,8 +12,9 @@ public record ClassAnalysis(
         List<String> importedTypes,
         boolean usesOptional,
         boolean usesExceptions,
-        /** Nomes de métodos não-públicos declarados na fonte (private/protected/package-private).
-         *  Usado para avisar o AI a não tentar chamá-los diretamente no teste. */
+        /** Nomes de métodos privados declarados na fonte. Protected/package-private ficam em
+         *  publicMethods, pois são chamáveis a partir do teste (mesmo pacote). Usado para avisar
+         *  o AI a não tentar chamar métodos privados diretamente no teste. */
         List<String> nonPublicMethodNames
 ) {
 }
