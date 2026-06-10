@@ -45,7 +45,7 @@ final class GeneratedTestSourceNormalizer {
     static String normalize(String generatedCode, ClassTestPrompt prompt) {
         String sanitized = GeneratedTestSanitizer.sanitize(generatedCode);
         if (sanitized.isBlank()) {
-            return GeneratedTestFallbackFactory.generate(prompt);
+            return "";
         }
 
         sanitized = sanitized.replace("import org.mockito.MockitoExtension;", "import org.mockito.junit.jupiter.MockitoExtension;");
@@ -69,7 +69,7 @@ final class GeneratedTestSourceNormalizer {
             ensureTestMethodsThrowException(compilationUnit);
             return compilationUnit.toString();
         } catch (RuntimeException ex) {
-            return GeneratedTestFallbackFactory.generate(prompt);
+            return sanitized;
         }
     }
 

@@ -24,15 +24,18 @@ public class ExecuteGeneratedTestBatchService implements ExecuteGeneratedTestBat
     private final TestExecutorPort testExecutorPort;
     private final RefineGeneratedTestService refineGeneratedTestService;
     private final GeneratedTestRepositoryPort generatedTestRepository;
+    private final GeneratedTestStructuralValidator structuralValidator;
 
     public ExecuteGeneratedTestBatchService(TestWorkspacePort testWorkspacePort,
                                             TestExecutorPort testExecutorPort,
                                             RefineGeneratedTestService refineGeneratedTestService,
-                                            GeneratedTestRepositoryPort generatedTestRepository) {
+                                            GeneratedTestRepositoryPort generatedTestRepository,
+                                            GeneratedTestStructuralValidator structuralValidator) {
         this.testWorkspacePort = testWorkspacePort;
         this.testExecutorPort = testExecutorPort;
         this.refineGeneratedTestService = refineGeneratedTestService;
         this.generatedTestRepository = generatedTestRepository;
+        this.structuralValidator = structuralValidator;
     }
 
     @Override
@@ -44,11 +47,24 @@ public class ExecuteGeneratedTestBatchService implements ExecuteGeneratedTestBat
             Path lastWorkspacePath = null;
 
             for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+                List<String> structuralErrors = structuralValidator.validate(candidate);
+                if (!structuralErrors.isEmpty()) {
+                    feedback = new TestExecutionFeedback(false, -1, structuralErrors, "");
+                    if (attempt < MAX_ATTEMPTS) {
+                        candidate = refineGeneratedTestService.refine(candidate.prompt(), candidate, feedback);
+                        continue;
+                    }
+                    break;
+                }
+
                 Path workspacePath = testWorkspacePort.writeCandidate(projectRoot, candidate);
                 lastWorkspacePath = workspacePath;
 
                 try {
-                    feedback = testExecutorPort.execute(projectRoot, candidate.testClassName());
+                    feedback = testExecutorPort.compile(projectRoot, candidate.testClassName());
+                    if (feedback.passed()) {
+                        feedback = testExecutorPort.execute(projectRoot, candidate.testClassName());
+                    }
                 } catch (RuntimeException e) {
                     testWorkspacePort.cleanup(workspacePath);
                     throw e;
@@ -66,6 +82,15 @@ public class ExecuteGeneratedTestBatchService implements ExecuteGeneratedTestBat
                 }
             }
 
+            if (feedback == null || !feedback.passed()) {
+                FallbackOutcome fallback = tryFallback(projectRoot, candidate);
+                if (fallback != null) {
+                    candidate = fallback.candidate();
+                    feedback = fallback.feedback();
+                    lastWorkspacePath = fallback.workspacePath();
+                }
+            }
+
             Path preservedPath = feedback != null && feedback.passed()
                     ? lastWorkspacePath
                     : generatedTestRepository.saveFailed(projectRoot, candidate, batch.createdAt());
@@ -73,5 +98,41 @@ public class ExecuteGeneratedTestBatchService implements ExecuteGeneratedTestBat
             results.add(new GeneratedTestExecutionResult(candidate, lastWorkspacePath, preservedPath, feedback));
         }
         return results;
+    }
+
+    /**
+     * Last-resort fallback for when the AI (qwen2.5-coder:7b) exhausted every refinement
+     * attempt without producing a passing test. Generates a minimal but always-compilable
+     * smoke test (mocks every dependency, instantiates the target via @InjectMocks and asserts
+     * it is not null). If it compiles and passes, the class still ends up with at least one
+     * green test and a small mutation-coverage gain instead of zero.
+     */
+    private FallbackOutcome tryFallback(Path projectRoot, GeneratedTestCandidate candidate) {
+        GeneratedTestCandidate fallbackCandidate = new GeneratedTestCandidate(
+                candidate.prompt(),
+                candidate.className(),
+                candidate.fullyQualifiedName(),
+                candidate.testClassName(),
+                GeneratedTestFallbackFactory.generate(candidate.prompt()),
+                null);
+
+        Path workspacePath = testWorkspacePort.writeCandidate(projectRoot, fallbackCandidate);
+        try {
+            TestExecutionFeedback fallbackFeedback = testExecutorPort.compile(projectRoot, fallbackCandidate.testClassName());
+            if (fallbackFeedback.passed()) {
+                fallbackFeedback = testExecutorPort.execute(projectRoot, fallbackCandidate.testClassName());
+            }
+            if (fallbackFeedback.passed()) {
+                return new FallbackOutcome(fallbackCandidate, fallbackFeedback, workspacePath);
+            }
+            testWorkspacePort.cleanup(workspacePath);
+            return null;
+        } catch (RuntimeException e) {
+            testWorkspacePort.cleanup(workspacePath);
+            return null;
+        }
+    }
+
+    private record FallbackOutcome(GeneratedTestCandidate candidate, TestExecutionFeedback feedback, Path workspacePath) {
     }
 }
