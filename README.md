@@ -5,7 +5,7 @@ Plataforma local para geração automatizada de testes unitários em projetos Ja
 > Status atual (CLI): `scan`, `select` (alias `s`), `status` e a base do fluxo `create test`.
 
 ---
-
+ 
 ## Visão Geral
 
 O Mutation AI Studio foi projetado para:
